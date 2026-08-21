@@ -2,6 +2,10 @@ import pygame
 import math
 import random
 import sys
+import argparse
+import subprocess
+import os
+from pathlib import Path
 
 # ==============================================================================
 # CONFIGURATION & DISPLAY
@@ -25,6 +29,88 @@ COLOR_SEARCHLIGHT = (255, 245, 200)
 COLOR_EMBER = (255, 140, 30)
 COLOR_SILHOUETTE = (10, 10, 14)
 COLOR_FLASH = (245, 240, 230)
+
+# ==============================================================================
+# FFMPEG EXPORT
+# ==============================================================================
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_EXPORT_PATH = SCRIPT_DIR / "war_pigs.mp4"
+AUDIO_PATH = SCRIPT_DIR / "war_pigs.mp3"
+
+
+class FfmpegRecorder:
+    """Pipe raw RGB frames to ffmpeg and mux optional audio into an MP4."""
+
+    def __init__(self, output_path, fps=FPS, width=WIDTH, height=HEIGHT, audio_path=None):
+        self.output_path = Path(output_path)
+        self.frame_size = width * height * 3
+        self._proc = None
+        self.frames_written = 0
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "rawvideo", "-vcodec", "rawvideo",
+            "-s", f"{width}x{height}", "-pix_fmt", "rgb24",
+            "-r", str(fps), "-i", "-",
+        ]
+        self._has_audio = audio_path is not None and Path(audio_path).is_file()
+        if self._has_audio:
+            cmd.extend(["-i", str(audio_path)])
+
+        cmd.extend([
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-pix_fmt", "yuv420p",
+        ])
+        if self._has_audio:
+            cmd.extend(["-c:a", "aac", "-b:a", "192k", "-shortest"])
+        else:
+            cmd.extend(["-t", str(SONG_DURATION_SEC)])
+        cmd.append(str(self.output_path))
+
+        self._proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        )
+
+    def write_frame(self, surface):
+        if self._proc is None or self._proc.stdin is None:
+            return
+        raw = pygame.image.tostring(surface, "RGB")
+        self._proc.stdin.write(raw)
+        self.frames_written += 1
+
+    def close(self):
+        if self._proc is None:
+            return
+        if self._proc.stdin:
+            self._proc.stdin.close()
+        stderr = self._proc.stderr.read().decode("utf-8", errors="replace") if self._proc.stderr else ""
+        rc = self._proc.wait()
+        self._proc = None
+        if rc != 0:
+            raise RuntimeError(f"ffmpeg failed (exit {rc}):\n{stderr[-2000:]}")
+        return self.output_path
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="War Pigs cinematic animation")
+    parser.add_argument(
+        "--export", "-e", action="store_true",
+        help="Render to MP4 via ffmpeg pipe instead of interactive playback",
+    )
+    parser.add_argument(
+        "--output", "-o", type=Path, default=DEFAULT_EXPORT_PATH,
+        help=f"Output MP4 path (default: {DEFAULT_EXPORT_PATH.name} in script folder)",
+    )
+    parser.add_argument(
+        "--no-preview", action="store_true",
+        help="Headless export (no window); sets SDL_VIDEODRIVER=dummy",
+    )
+    parser.add_argument(
+        "--hud", action="store_true",
+        help="Include on-screen HUD in exported video (hidden by default)",
+    )
+    return parser.parse_args()
+
 
 # ==============================================================================
 # UTILITY HELPERS
@@ -843,20 +929,39 @@ def draw_atmospheric_particles(surface):
 # MAIN ENGINE & TIMELINE
 # ==============================================================================
 def main():
+    args = parse_args()
+    export_mode = args.export
+
+    if export_mode and args.no_preview:
+        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Black Sabbath - War Pigs (Dynamic Cinematic Cut)")
+    caption = "Black Sabbath - War Pigs (Exporting…)" if export_mode else "Black Sabbath - War Pigs (Dynamic Cinematic Cut)"
+    pygame.display.set_caption(caption)
     clock = pygame.time.Clock()
     camera = CameraShake()
 
     has_audio = False
-    try:
-        pygame.mixer.init()
-        pygame.mixer.music.load("war_pigs.mp3")
-        pygame.mixer.music.play()
-        has_audio = True
-    except Exception:
-        pass
+    if not export_mode:
+        try:
+            pygame.mixer.init()
+            pygame.mixer.music.load(str(AUDIO_PATH))
+            pygame.mixer.music.play()
+            has_audio = True
+        except Exception:
+            pass
+
+    recorder = None
+    if export_mode:
+        random.seed(42)
+        audio_for_mux = AUDIO_PATH if AUDIO_PATH.is_file() else None
+        recorder = FfmpegRecorder(args.output, audio_path=audio_for_mux)
+        total_frames = int(SONG_DURATION_SEC * FPS)
+        print(f"Exporting {total_frames} frames ({SONG_DURATION_SEC:.0f}s @ {FPS}fps) → {args.output}")
+        if audio_for_mux:
+            print(f"Muxing audio from {audio_for_mux.name}")
 
     # Scene Simulation Pools
     planes = []
@@ -872,20 +977,27 @@ def main():
 
     start_ticks = pygame.time.get_ticks()
     time_offset = 0.0
+    frame_index = 0
+    total_frames = int(SONG_DURATION_SEC * FPS)
 
     running = True
     while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RIGHT:
-                    time_offset += 15.0
-                elif event.key == pygame.K_LEFT:
-                    time_offset = max(0.0, time_offset - 15.0)
+        if export_mode:
+            if frame_index >= total_frames:
+                break
+            current_sec = frame_index / FPS
+        else:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RIGHT:
+                        time_offset += 15.0
+                    elif event.key == pygame.K_LEFT:
+                        time_offset = max(0.0, time_offset - 15.0)
 
-        raw_sec = (pygame.mixer.music.get_pos() / 1000.0) if has_audio else ((pygame.time.get_ticks() - start_ticks) / 1000.0)
-        current_sec = min(SONG_DURATION_SEC, raw_sec + time_offset)
+            raw_sec = (pygame.mixer.music.get_pos() / 1000.0) if has_audio else ((pygame.time.get_ticks() - start_ticks) / 1000.0)
+            current_sec = min(SONG_DURATION_SEC, raw_sec + time_offset)
 
         # ----------------------------------------------------------------------
         # SCENE CUT CONTROLLER
@@ -1054,19 +1166,38 @@ def main():
         pygame.draw.rect(screen, (0, 0, 0), (0, HEIGHT - bar_height, WIDTH, bar_height))
 
         # Scene Tracker & HUD
-        mins = int(current_sec // 60)
-        secs = int(current_sec % 60)
-        scene_names = [
-            "AIR RAID SIREN", "BOMBERS INBOUND", "HEAVY RIFF BATTALION",
-            "WAR TABLE / GENERALS", "CARPET BOMBING", "SOLO CATACLYSM",
-            "FRONTLINE GROUND BATTLE", "DESOLATE AFTERMATH",
-        ]
-        font = pygame.font.SysFont("monospace", 13, bold=True)
-        hud_text = font.render(f"[{mins:02d}:{secs:02d} / 03:33] SCENE: {scene_names[scene_id]} | [<-/-> Seek]", True, (160, 140, 140))
-        screen.blit(hud_text, (20, 14))
+        show_hud = (not export_mode) or args.hud
+        if show_hud:
+            mins = int(current_sec // 60)
+            secs = int(current_sec % 60)
+            scene_names = [
+                "AIR RAID SIREN", "BOMBERS INBOUND", "HEAVY RIFF BATTALION",
+                "WAR TABLE / GENERALS", "CARPET BOMBING", "SOLO CATACLYSM",
+                "FRONTLINE GROUND BATTLE", "DESOLATE AFTERMATH",
+            ]
+            font = pygame.font.SysFont("monospace", 13, bold=True)
+            hud_suffix = " | [<-/-> Seek]" if not export_mode else ""
+            hud_text = font.render(
+                f"[{mins:02d}:{secs:02d} / 03:33] SCENE: {scene_names[scene_id]}{hud_suffix}",
+                True, (160, 140, 140),
+            )
+            screen.blit(hud_text, (20, 14))
 
-        pygame.display.flip()
-        clock.tick(FPS)
+        if export_mode:
+            recorder.write_frame(screen)
+            frame_index += 1
+            if not args.no_preview:
+                pygame.display.flip()
+            if frame_index % (FPS * 5) == 0 or frame_index == total_frames:
+                pct = 100.0 * frame_index / total_frames
+                print(f"  {frame_index}/{total_frames} frames ({pct:.0f}%)")
+        else:
+            pygame.display.flip()
+            clock.tick(FPS)
+
+    if recorder:
+        out = recorder.close()
+        print(f"Done → {out}")
 
     pygame.quit()
     sys.exit()
