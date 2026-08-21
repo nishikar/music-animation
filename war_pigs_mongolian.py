@@ -10,6 +10,12 @@ WIDTH, HEIGHT = 960, 540
 FPS = 60
 SONG_DURATION_SEC = 213.0  # 3 minutes 33 seconds
 
+# Scene timeline (seconds)
+SCENE_SOLO_START = 135.0
+SCENE_SOLO_END = 145.0      # ~10s guitar solo cataclysm
+SCENE_GROUND_BATTLE_END = 175.0
+SCENE_AFTERMATH_START = 175.0
+
 COLOR_BLACK = (8, 8, 12)
 COLOR_DEEP_RED = (90, 10, 15)
 COLOR_AMBER = (230, 125, 25)
@@ -628,11 +634,11 @@ def draw_war_table_scene(surface, current_sec):
     surface.blit(shadow_surf, (0, 0))
 
 
-def draw_tank_and_artillery(surface, x, y, cycle):
+def draw_tank_and_artillery(surface, x, y, cycle, recoil_system=None):
     """Draws a heavy tracked tank with spring recoil, animated tracks, and muzzle effects."""
-    global tank_recoil
-    tank_recoil.update(cycle)
-    offset = tank_recoil.barrel_offset
+    recoil = recoil_system if recoil_system is not None else tank_recoil
+    recoil.update(cycle)
+    offset = recoil.barrel_offset
 
     # Animated track treads
     track_y = y - 4
@@ -640,7 +646,7 @@ def draw_tank_and_artillery(surface, x, y, cycle):
         (x - 60, y), (x + 60, y), (x + 50, y - 22), (x - 50, y - 22)
     ])
     for tx in range(int(x - 48), int(x + 48), 10):
-        notch_x = tx + int(tank_recoil.track_offset) % 10
+        notch_x = tx + int(recoil.track_offset) % 10
         pygame.draw.line(surface, (25, 25, 30), (notch_x, track_y - 18), (notch_x, track_y - 2), 2)
     # Road wheels
     for wx in range(int(x - 40), int(x + 45), 16):
@@ -656,19 +662,19 @@ def draw_tank_and_artillery(surface, x, y, cycle):
     pygame.draw.line(surface, COLOR_SILHOUETTE, barrel_start, barrel_end, 6)
 
     # Muzzle flash & smoke
-    if tank_recoil.is_firing:
+    if recoil.is_firing:
         flash_x, flash_y = barrel_end[0] + 8, barrel_end[1] - 2
         flash_surf = pygame.Surface((60, 60), pygame.SRCALPHA)
         pygame.draw.circle(flash_surf, (255, 240, 180, 200), (30, 30), 22)
         pygame.draw.circle(flash_surf, (255, 200, 80, 150), (30, 30), 32)
         surface.blit(flash_surf, (int(flash_x) - 30, int(flash_y) - 30), special_flags=pygame.BLEND_ADD)
-        if tank_recoil.muzzle_smoke > 15:
+        if recoil.muzzle_smoke > 15:
             spawn_smoke_column(flash_x, flash_y, 2, spread=0.3)
 
     # Ejected shell casing
-    if tank_recoil.casing_life > 0:
-        cx = x + 10 + tank_recoil.casing_x
-        cy = y - 30 + (30 - tank_recoil.casing_life) * 0.5
+    if recoil.casing_life > 0:
+        cx = x + 10 + recoil.casing_x
+        cy = y - 30 + (30 - recoil.casing_life) * 0.5
         pygame.draw.rect(surface, COLOR_AMBER, (int(cx), int(cy), 4, 2))
 
 
@@ -732,6 +738,87 @@ def draw_soldier(surface, x, y, cycle_time, scale=1.0):
                      (int(rifle_end[0] + 4 * scale), int(rifle_end[1] - 7 * scale)), 1)
 
 
+def draw_muzzle_flash(surface, x, y):
+    flash = pygame.Surface((20, 20), pygame.SRCALPHA)
+    pygame.draw.circle(flash, (255, 220, 120, 200), (10, 10), 6)
+    surface.blit(flash, (int(x) - 10, int(y) - 10), special_flags=pygame.BLEND_ADD)
+
+
+def draw_tracer_round(surface, x1, y1, x2, y2):
+    tracer = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    pygame.draw.line(tracer, (255, 200, 80, 180), (int(x1), int(y1)), (int(x2), int(y2)), 2)
+    pygame.draw.line(tracer, (255, 240, 180, 120), (int(x1), int(y1)), (int(x2), int(y2)), 1)
+    surface.blit(tracer, (0, 0))
+
+
+def draw_ground_battle_scene(surface, current_sec, explosions, camera, tank_recoils):
+    """Large-scale frontline ground battle — soldiers, tanks, tracers, and impacts."""
+    beat = (math.sin(current_sec * 10.0) + 1) * 0.5
+    if beat > 0.82:
+        camera.add_impulse(1.8)
+
+    haze = int(30 + beat * 25)
+    draw_gradient_sky(surface, (55, 18, 12), (120 + haze, 45 + haze // 2, 18))
+    draw_parallax_clouds(surface, current_sec, 1, (60, 35, 25), 45, 0.6, 30)
+    draw_parallax_clouds(surface, current_sec, 0, (40, 25, 20), 30, 0.35, 90)
+
+    ground_y = HEIGHT - 58
+    pygame.draw.rect(surface, COLOR_SILHOUETTE, (0, ground_y, WIDTH, 58))
+    # Battlefield debris / crater rim silhouettes
+    for cx in (120, 340, 580, 760):
+        pygame.draw.ellipse(surface, (18, 16, 20), (cx - 35, ground_y - 8, 70, 16))
+
+    # Barbed wire line across no-man's-land
+    wire_y = ground_y - 28
+    for wx in range(40, WIDTH - 40, 35):
+        post_h = 18 + (wx % 3) * 4
+        pygame.draw.line(surface, (30, 28, 32), (wx, wire_y), (wx, wire_y + post_h), 2)
+        if wx % 70 < 35:
+            pygame.draw.line(surface, (35, 32, 36), (wx, wire_y + 6), (wx + 30, wire_y + 2), 1)
+
+    # Left column advancing east
+    for i in range(12):
+        sx = (i * 75 + int(current_sec * 85)) % (WIDTH + 160) - 80
+        draw_soldier(surface, sx, ground_y + 10, cycle_time=current_sec * 10.0 + i * 0.7, scale=0.95)
+        if random.random() < 0.015:
+            draw_muzzle_flash(surface, sx + 18, ground_y - 20)
+
+    # Right column advancing west
+    for i in range(10):
+        sx = WIDTH - ((i * 80 + int(current_sec * 65)) % (WIDTH + 140)) + 60
+        draw_soldier(surface, sx, ground_y + 14, cycle_time=current_sec * 9.5 + i * 0.9 + 2.0, scale=0.9)
+        if random.random() < 0.012:
+            draw_muzzle_flash(surface, sx - 12, ground_y - 18)
+
+    # Three tanks across the line, staggered fire cycles
+    tank_positions = [(180, 1.0), (480, 2.4), (780, 0.6)]
+    for idx, (tx, phase_offset) in enumerate(tank_positions):
+        draw_tank_and_artillery(surface, tx, ground_y + 8, cycle=current_sec + phase_offset, recoil_system=tank_recoils[idx])
+
+    # Tracer fire crisscrossing no-man's-land
+    if random.random() < 0.25:
+        y_mid = ground_y - random.randint(15, 45)
+        if random.random() < 0.5:
+            draw_tracer_round(surface, 0, y_mid + 10, random.randint(200, WIDTH), y_mid)
+        else:
+            draw_tracer_round(surface, WIDTH, y_mid + 8, random.randint(0, WIDTH - 200), y_mid)
+
+    # Mortar and artillery impacts
+    if random.random() < 0.07:
+        ex = random.randint(80, WIDTH - 80)
+        explosions.append(Explosion(ex, ground_y + random.randint(-5, 5), max_radius=random.randint(25, 50)))
+        camera.add_impulse(random.uniform(2.5, 5.0), (ex - WIDTH // 2) / WIDTH)
+
+    # Drifting battle smoke
+    if random.random() < 0.12:
+        smoke_puffs.append(SmokePuff(
+            random.randint(0, WIDTH), ground_y - random.randint(5, 50),
+            random.uniform(-0.4, 0.4), random.uniform(-0.3, -0.05),
+            random.uniform(6, 14), random.randint(35, 70),
+            color=(45, 38, 35), grow=0.25
+        ))
+
+
 def draw_atmospheric_particles(surface):
     for puff in smoke_puffs[:]:
         puff.update()
@@ -781,6 +868,8 @@ def main():
     for i in range(4):
         planes.append(Plane(WIDTH + i * 220, 90 + (i % 2) * 45, speed=-3.2, plane_type="bomber"))
 
+    ground_battle_recoils = [TankRecoilSystem() for _ in range(3)]
+
     start_ticks = pygame.time.get_ticks()
     time_offset = 0.0
 
@@ -805,9 +894,10 @@ def main():
         if 22.0 <= current_sec < 46.0: scene_id = 1
         elif 46.0 <= current_sec < 75.0: scene_id = 2
         elif 75.0 <= current_sec < 105.0: scene_id = 3
-        elif 105.0 <= current_sec < 135.0: scene_id = 4
-        elif 135.0 <= current_sec < 175.0: scene_id = 5
-        elif current_sec >= 175.0: scene_id = 6
+        elif 105.0 <= current_sec < SCENE_SOLO_START: scene_id = 4
+        elif SCENE_SOLO_START <= current_sec < SCENE_SOLO_END: scene_id = 5
+        elif SCENE_SOLO_END <= current_sec < SCENE_GROUND_BATTLE_END: scene_id = 6
+        elif current_sec >= SCENE_AFTERMATH_START: scene_id = 7
 
         frame = pygame.Surface((WIDTH, HEIGHT))
 
@@ -910,9 +1000,13 @@ def main():
                 if p.x < -100:
                     planes.remove(p)
 
-        # --- SCENE 6: DESOLATE AFTERMATH & OUTRO ---
+        # --- SCENE 6: FRONTLINE GROUND BATTLE ---
         elif scene_id == 6:
-            fade = max(0.0, 1.0 - (current_sec - 175.0) / 38.0)
+            draw_ground_battle_scene(frame, current_sec, explosions, camera, ground_battle_recoils)
+
+        # --- SCENE 7: DESOLATE AFTERMATH & OUTRO ---
+        elif scene_id == 7:
+            fade = max(0.0, 1.0 - (current_sec - SCENE_AFTERMATH_START) / 38.0)
             draw_gradient_sky(frame, (int(12 * fade), int(10 * fade), int(14 * fade)), (int(45 * fade), int(20 * fade), int(15 * fade)))
             ground_y = HEIGHT - 50
             pygame.draw.rect(frame, (int(10 * fade), int(10 * fade), int(14 * fade)), (0, ground_y, WIDTH, 50))
@@ -962,7 +1056,11 @@ def main():
         # Scene Tracker & HUD
         mins = int(current_sec // 60)
         secs = int(current_sec % 60)
-        scene_names = ["AIR RAID SIREN", "BOMBERS INBOUND", "HEAVY RIFF BATTALION", "WAR TABLE / GENERALS", "CARPET BOMBING", "SOLO CATACLYSM", "DESOLATE AFTERMATH"]
+        scene_names = [
+            "AIR RAID SIREN", "BOMBERS INBOUND", "HEAVY RIFF BATTALION",
+            "WAR TABLE / GENERALS", "CARPET BOMBING", "SOLO CATACLYSM",
+            "FRONTLINE GROUND BATTLE", "DESOLATE AFTERMATH",
+        ]
         font = pygame.font.SysFont("monospace", 13, bold=True)
         hud_text = font.render(f"[{mins:02d}:{secs:02d} / 03:33] SCENE: {scene_names[scene_id]} | [<-/-> Seek]", True, (160, 140, 140))
         screen.blit(hud_text, (20, 14))
