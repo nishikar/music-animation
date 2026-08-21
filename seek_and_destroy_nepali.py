@@ -50,11 +50,16 @@ COLOR_SKIN = (212, 160, 126)
 COLOR_SKIN_SHADOW = (175, 125, 95)
 COLOR_CARPET_RED = (120, 30, 35)
 
+# Authentic Newari folk / ritual dance phrases (researched from Jyapu Pyakhan, Charya
+# Nritya 1-2-4 tribhanga step, Ghintang Ghisi stick dance, and Anjali parikrama).
+PHRASE_BEATS = 16          # ~13.3 s per phrase at 72 BPM before routine change
+ROUTINE_BLEND_BEATS = 4    # cross-fade window at phrase end
+
 DANCE_ROUTINES = [
-    ("MARUNI CHHALANG", "Flowing side-cross strides with sweeping mudras"),
-    ("CHARYA DIP & WRIST TWIRL", "Deep knee dip on downbeats with wrist circles"),
-    ("GHUMAURO PIRUETTES", "Graceful whirls locked to half-bar phrases"),
-    ("ANJALI & TAALI STEP", "Namaste arches and courtyard cross-steps on beats"),
+    ("CHARYA TRIBHANGA (1-2-4)", "Side weight-transfer; hip and head wave in S-curve tribhanga"),
+    ("JYAPU-JYAPUNI PYAKHAN", "Farmer couple cross-steps, open-arm sweeps, and taali on dhimay pulse"),
+    ("GHINTANG GHISI", "Partner stick-dance hits on twang beats with precise footwork"),
+    ("ANJALI PARIKRAMA", "Prayer mudra with slow courtyard circle and gentle plié dips"),
 ]
 
 # ==============================================================================
@@ -142,8 +147,26 @@ def smoothstep(t):
     return t * t * (3.0 - 2.0 * t)
 
 
+def ease_in_out_cubic(t):
+    t = clamp(t, 0.0, 1.0)
+    if t < 0.5:
+        return 4.0 * t * t * t
+    return 1.0 - pow(-2.0 * t + 2.0, 3) / 2.0
+
+
 def lerp(a, b, t):
     return a + (b - a) * t
+
+
+def lerp_pose(p1, p2, t):
+    t = ease_in_out_cubic(t)
+    out = {}
+    for key in p1:
+        if key == "mudra_l" or key == "mudra_r":
+            out[key] = p2[key] if t >= 0.5 else p1[key]
+        else:
+            out[key] = lerp(p1[key], p2[key], t)
+    return out
 
 
 def lerp_color(c1, c2, t):
@@ -576,42 +599,186 @@ class NarayanGopalPerformer:
 
 
 # ==============================================================================
-# BEAT-SYNCED CHOREOGRAPHY POSES
+# NEWARI FOLK CHOREOGRAPHY — KEYFRAME PHRASES @ 72 BPM
 # ==============================================================================
-def choreography_pose(step_mode, timing, scale=1.0):
-    """Return kinematic targets locked to 72 BPM beats."""
-    bf = timing["beat_frac"]
-    bc = timing["bar_cycle"]
-    phrase = timing["phrase_frac"]
-    flow = smoothstep(bf)  # ease within each beat for fluid motion
-
-    if step_mode == 0:  # Maruni — cross-step on beats 1 & 3
-        step_phase = math.sin(timing["cycle"] * 0.5)
-        dip = abs(math.sin(timing["cycle"] * 0.5)) * 10 * scale
-        sway = step_phase * 8 * scale
-        step_w = lerp(18, 28, flow) * scale
-        arm_speed = 1.0
-    elif step_mode == 1:  # Charya dip on downbeats
-        dip = (1.0 - math.cos(timing["cycle"])) * 0.5 * 20 * scale
-        sway = math.sin(bc * 0.5) * 4 * scale
-        step_w = 30 * scale
-        arm_speed = 0.75
-    elif step_mode == 2:  # Pirouette — half-bar rotation
-        spin = math.sin(timing["cycle"] * 0.25)
-        dip = abs(math.sin(timing["cycle"])) * 6 * scale
-        sway = spin * 16 * scale
-        step_w = 14 * scale
-        arm_speed = 2.0
-    else:  # Anjali & taali on every other beat
-        dip = abs(math.sin(timing["cycle"])) * 9 * scale
-        sway = math.sin(timing["cycle"] * 0.5) * 5 * scale
-        step_w = 20 * scale
-        arm_speed = 1.25
-
-    return {
-        "dip": dip, "sway": sway, "step_w": step_w,
-        "arm_speed": arm_speed, "flow": flow, "phrase": phrase,
+def _pose(**kwargs):
+    defaults = {
+        "weight_side": 0.0, "tribhanga": 0.0, "dip": 0.08, "step_fwd": 0.0,
+        "step_wide": 0.35, "turn": 0.0, "travel": 0.0, "head_tilt": 0.0,
+        "pleat_sway": 0.0, "arm_raise_l": 0.35, "arm_raise_r": 0.35,
+        "arm_spread": 0.25, "arm_cross": 0.0, "mudra_l": "flow", "mudra_r": "flow",
     }
+    defaults.update(kwargs)
+    return defaults
+
+
+# Each routine: keyframes at beat positions within a 16-beat phrase.
+# Values are blended with cubic ease for fluid Newari movement.
+NEWARI_KEYFRAMES = [
+    # 0 — Charya Nritya 1-2-4 tribhanga (hip/head wave, side weight transfer)
+    [
+        (0.0, _pose(weight_side=-0.85, tribhanga=-0.9, dip=0.22, step_wide=0.42, arm_raise_l=0.75, arm_raise_r=0.2, arm_spread=0.5, mudra_l="alapadma", mudra_r="flow", head_tilt=-0.35)),
+        (1.0, _pose(weight_side=-0.45, tribhanga=-0.45, dip=0.14, step_wide=0.38, arm_raise_l=0.55, arm_raise_r=0.25, arm_spread=0.4, head_tilt=-0.15)),
+        (2.0, _pose(weight_side=0.0, tribhanga=0.0, dip=0.1, step_wide=0.32, arm_raise_l=0.4, arm_raise_r=0.4, arm_spread=0.35, head_tilt=0.0)),
+        (3.0, _pose(weight_side=0.45, tribhanga=0.45, dip=0.14, step_wide=0.38, arm_raise_l=0.25, arm_raise_r=0.55, arm_spread=0.4, head_tilt=0.15)),
+        (4.0, _pose(weight_side=0.85, tribhanga=0.9, dip=0.22, step_wide=0.42, arm_raise_l=0.2, arm_raise_r=0.75, arm_spread=0.5, mudra_r="alapadma", mudra_l="flow", head_tilt=0.35)),
+        (5.0, _pose(weight_side=0.45, tribhanga=0.45, dip=0.14, step_wide=0.38, arm_raise_l=0.25, arm_raise_r=0.55, arm_spread=0.4, head_tilt=0.15)),
+        (6.0, _pose(weight_side=0.0, tribhanga=0.0, dip=0.1, step_wide=0.32, arm_raise_l=0.4, arm_raise_r=0.4, arm_spread=0.35, head_tilt=0.0)),
+        (7.0, _pose(weight_side=-0.45, tribhanga=-0.45, dip=0.14, step_wide=0.38, arm_raise_l=0.55, arm_raise_r=0.25, arm_spread=0.4, head_tilt=-0.15)),
+        (8.0, _pose(weight_side=-0.85, tribhanga=-0.9, dip=0.22, step_wide=0.42, arm_raise_l=0.75, arm_raise_r=0.2, arm_spread=0.5, mudra_l="alapadma", head_tilt=-0.35)),
+        (12.0, _pose(weight_side=0.85, tribhanga=0.9, dip=0.22, step_wide=0.42, arm_raise_r=0.75, arm_spread=0.5, mudra_r="alapadma", head_tilt=0.35)),
+        (15.0, _pose(weight_side=0.0, tribhanga=0.0, dip=0.12, step_wide=0.34, arm_raise_l=0.45, arm_raise_r=0.45, arm_spread=0.38, head_tilt=0.0)),
+    ],
+    # 1 — Jyapu-Jyapuni Pyakhan (agrarian couple dance, cross-steps & taali)
+    [
+        (0.0, _pose(weight_side=0.6, step_fwd=0.35, step_wide=0.55, dip=0.12, tribhanga=0.25, arm_spread=0.65, arm_raise_l=0.5, arm_raise_r=0.55, travel=0.15, pleat_sway=0.3, mudra_l="sweep", mudra_r="sweep")),
+        (2.0, _pose(weight_side=0.0, step_fwd=0.0, step_wide=0.48, dip=0.28, tribhanga=0.0, arm_spread=0.85, arm_raise_l=0.65, arm_raise_r=0.65, travel=0.0, pleat_sway=0.0)),
+        (4.0, _pose(weight_side=-0.6, step_fwd=-0.35, step_wide=0.55, dip=0.12, tribhanga=-0.25, arm_spread=0.65, arm_raise_l=0.55, arm_raise_r=0.5, travel=-0.15, pleat_sway=-0.3, mudra_l="sweep", mudra_r="sweep")),
+        (6.0, _pose(weight_side=0.0, step_fwd=0.0, step_wide=0.4, dip=0.18, tribhanga=0.0, arm_spread=0.3, arm_raise_l=0.35, arm_raise_r=0.35, mudra_l="anjali", mudra_r="anjali", travel=0.0)),
+        (7.0, _pose(weight_side=0.0, step_fwd=0.0, step_wide=0.36, dip=0.22, tribhanga=0.0, arm_spread=0.15, arm_cross=0.55, mudra_l="taali", mudra_r="taali", travel=0.0)),
+        (8.0, _pose(weight_side=0.55, step_fwd=0.3, step_wide=0.52, dip=0.14, tribhanga=0.2, arm_spread=0.6, travel=0.12, pleat_sway=0.25)),
+        (10.0, _pose(weight_side=-0.55, step_fwd=-0.3, step_wide=0.52, dip=0.14, tribhanga=-0.2, arm_spread=0.6, travel=-0.12, pleat_sway=-0.25)),
+        (14.0, _pose(weight_side=0.0, step_fwd=0.0, step_wide=0.38, dip=0.16, arm_cross=0.45, mudra_l="taali", mudra_r="taali")),
+        (15.0, _pose(weight_side=0.0, step_fwd=0.0, step_wide=0.36, dip=0.12, arm_spread=0.35, mudra_l="flow", mudra_r="flow")),
+    ],
+    # 2 — Ghintang Ghisi stick dance (twang hits on beats 1, 3, 7, 15)
+    [
+        (0.0, _pose(step_wide=0.28, dip=0.08, arm_spread=0.15, arm_cross=0.0, mudra_l="stick_ready", mudra_r="stick_ready")),
+        (1.0, _pose(step_wide=0.52, dip=0.16, arm_spread=0.2, arm_cross=0.85, mudra_l="stick_hit", mudra_r="stick_hit", travel=0.08)),
+        (2.0, _pose(step_wide=0.32, dip=0.1, arm_spread=0.2, arm_cross=0.15, mudra_l="stick_ready", mudra_r="stick_ready", travel=0.0)),
+        (3.0, _pose(step_wide=0.52, dip=0.16, arm_spread=0.2, arm_cross=0.85, mudra_l="stick_hit", mudra_r="stick_hit", travel=-0.08)),
+        (4.0, _pose(step_wide=0.28, dip=0.08, arm_spread=0.15, arm_cross=0.0, travel=0.0)),
+        (6.0, _pose(step_wide=0.48, dip=0.14, arm_cross=0.7, mudra_l="stick_hit", mudra_r="stick_hit")),
+        (7.0, _pose(step_wide=0.58, dip=0.2, arm_cross=0.95, mudra_l="stick_hit", mudra_r="stick_hit", travel=0.1)),
+        (8.0, _pose(step_wide=0.3, dip=0.1, arm_cross=0.1, travel=0.0)),
+        (11.0, _pose(step_wide=0.5, dip=0.15, arm_cross=0.8, mudra_l="stick_hit", mudra_r="stick_hit")),
+        (15.0, _pose(step_wide=0.56, dip=0.18, arm_cross=0.9, mudra_l="stick_hit", mudra_r="stick_hit")),
+    ],
+    # 3 — Anjali parikrama (slow prayer circle, gentle dips every 4 beats)
+    [
+        (0.0, _pose(dip=0.1, step_wide=0.3, arm_cross=0.7, mudra_l="anjali", mudra_r="anjali", travel=0.0, turn=-0.15, tribhanga=0.1, head_tilt=0.05)),
+        (4.0, _pose(dip=0.24, step_wide=0.34, arm_cross=0.75, mudra_l="anjali", mudra_r="anjali", travel=0.2, turn=0.0, tribhanga=0.0, head_tilt=0.0)),
+        (8.0, _pose(dip=0.1, step_wide=0.3, arm_cross=0.7, mudra_l="anjali", mudra_r="anjali", travel=0.0, turn=0.15, tribhanga=-0.1, head_tilt=-0.05)),
+        (12.0, _pose(dip=0.24, step_wide=0.34, arm_cross=0.75, mudra_l="anjali", mudra_r="anjali", travel=-0.2, turn=0.0, tribhanga=0.0, head_tilt=0.0)),
+        (15.0, _pose(dip=0.12, step_wide=0.32, arm_cross=0.72, mudra_l="anjali", mudra_r="anjali", travel=0.0, turn=-0.08, tribhanga=0.05)),
+    ],
+]
+
+
+def _sample_keyframes(keyframes, beat_in_phrase):
+    beat_in_phrase = beat_in_phrase % PHRASE_BEATS
+    beats = [kf[0] for kf in keyframes]
+    if beat_in_phrase <= beats[0]:
+        return dict(keyframes[0][1])
+    if beat_in_phrase >= beats[-1]:
+        return dict(keyframes[-1][1])
+
+    for i in range(len(keyframes) - 1):
+        b0, p0 = keyframes[i]
+        b1, p1 = keyframes[i + 1]
+        if b0 <= beat_in_phrase <= b1:
+            span = max(0.001, b1 - b0)
+            t = ease_in_out_cubic((beat_in_phrase - b0) / span)
+            return lerp_pose(p0, p1, t)
+    return dict(keyframes[-1][1])
+
+
+def get_newari_pose(timing, phase_beats=0.0, scale=1.0):
+    """Sample blended Newari folk pose from beat-synced keyframe phrases."""
+    beat_index = timing["beat_index"] + phase_beats
+    phrase_index = int(beat_index // PHRASE_BEATS)
+    beat_in_phrase = beat_index % PHRASE_BEATS
+    routine = phrase_index % len(NEWARI_KEYFRAMES)
+
+    pose = _sample_keyframes(NEWARI_KEYFRAMES[routine], beat_in_phrase)
+
+    # Smooth cross-fade into next routine over final blend window
+    if beat_in_phrase >= PHRASE_BEATS - ROUTINE_BLEND_BEATS:
+        blend_t = (beat_in_phrase - (PHRASE_BEATS - ROUTINE_BLEND_BEATS)) / ROUTINE_BLEND_BEATS
+        next_pose = _sample_keyframes(NEWARI_KEYFRAMES[(routine + 1) % len(NEWARI_KEYFRAMES)], 0.0)
+        pose = lerp_pose(pose, next_pose, blend_t)
+
+    # Continuous parikrama arc for anjali routine
+    if routine == 3:
+        arc = math.sin(beat_in_phrase / PHRASE_BEATS * math.pi * 2)
+        pose["travel"] = lerp(pose["travel"], arc * 0.35, 0.4)
+        pose["turn"] = lerp(pose["turn"], arc * 0.25, 0.4)
+
+    # Scale depth values
+    pose["dip"] *= scale
+    pose["step_wide"] *= scale
+    pose["travel"] *= scale
+    pose["step_fwd"] *= scale
+    pose["routine"] = routine
+    pose["beat_in_phrase"] = beat_in_phrase
+    return pose
+
+
+def _tribhanga_offsets(pose, spine_len, scale):
+    """Apply tribhanga S-curve: knee, hip, and head counter-bend."""
+    tb = pose["tribhanga"]
+    weight = pose["weight_side"]
+    pelvis_shift_x = weight * 5.0 * scale
+    chest_shift_x = pelvis_shift_x + tb * 4.0 * scale
+    head_shift_x = chest_shift_x + tb * 3.5 * scale + pose["head_tilt"] * 2.5 * scale
+    torso_roll = tb * 0.18 + weight * 0.06
+    return pelvis_shift_x, chest_shift_x, head_shift_x, torso_roll
+
+
+def _foot_targets(x, y, pose, scale, facing=1.0):
+    """Derive smooth foot placements from weighted pose (not raw sine snaps)."""
+    wide = pose["step_wide"] * 38.0 * scale
+    fwd = pose["step_fwd"] * 14.0 * scale * facing
+    weight = pose["weight_side"]
+
+    # Weight-bearing foot stays grounded; free foot lifts and crosses smoothly
+    support_x = x + weight * wide * 0.35 * facing
+    free_x = x - weight * wide * 0.65 * facing + fwd
+    lift = abs(weight) * 8.0 * scale + pose["dip"] * 0.15
+    free_lift = clamp(lift, 0.0, 14.0 * scale)
+
+    if weight >= 0:
+        foot_r = (support_x + wide * 0.25 * facing, y)
+        foot_l = (free_x - wide * 0.2 * facing, y - free_lift)
+    else:
+        foot_l = (support_x - wide * 0.25 * facing, y)
+        foot_r = (free_x + wide * 0.2 * facing, y - free_lift)
+    return foot_l, foot_r
+
+
+def _resolve_mudra_hand(shoulder, mudra, pose, side, scale, facing=1.0, is_lead_male=False):
+    """Map Newari mudra names to smooth hand targets."""
+    sx, sy = shoulder
+    spread = pose["arm_spread"]
+    cross = pose["arm_cross"]
+    raise_amt = pose["arm_raise_l"] if side == "l" else pose["arm_raise_r"]
+    sign = -1.0 if side == "l" else 1.0
+
+    if mudra == "anjali" or mudra == "taali":
+        gap = 2.0 * scale if mudra == "taali" else 5.0 * scale
+        return (sx + gap * facing, sy + 12.0 * scale)
+    if mudra == "alapadma":
+        return (sx + sign * 8.0 * scale * facing, sy - (18.0 + raise_amt * 22.0) * scale)
+    if mudra == "stick_ready":
+        return (sx + sign * 14.0 * scale * facing, sy + 6.0 * scale)
+    if mudra == "stick_hit":
+        cx = sx + sign * 6.0 * scale * facing
+        return (cx, sy + (8.0 + cross * 6.0) * scale)
+    if mudra == "sweep":
+        return (sx + sign * (20.0 + spread * 18.0) * scale * facing, sy - (8.0 + raise_amt * 20.0) * scale)
+    if mudra == "flame_cup" and is_lead_male and side == "r":
+        return (sx + 18.0 * scale, sy - 16.0 * scale)
+    # Flowing default — soft arc, not jerky sine snap
+    return (
+        sx + sign * (16.0 + spread * 20.0) * scale * facing,
+        sy - (6.0 + raise_amt * 18.0) * scale + cross * 4.0 * scale,
+    )
+
+
+def get_routine_info(timing):
+    phrase_index = int(timing["beat_index"] // PHRASE_BEATS)
+    routine = phrase_index % len(DANCE_ROUTINES)
+    return routine, DANCE_ROUTINES[routine]
 
 
 # ==============================================================================
@@ -627,41 +794,38 @@ class MaleLeadDancer:
         self.forearm_len = 20 * self.scale
         self.fire = RealisticPalmFire()
 
-    def draw(self, surface, x, y, timing, step_mode=0):
+    def draw(self, surface, x, y, timing, phase_beats=0.0):
         scale = self.scale
-        pose = choreography_pose(step_mode, timing, scale)
-        cycle = timing["cycle"]
+        pose = get_newari_pose(timing, phase_beats=phase_beats, scale=1.0)
+        facing = 1.0
 
-        pelvis_x = x + pose["sway"]
+        pelvis_shift, chest_shift, head_shift, torso_roll = _tribhanga_offsets(pose, self.spine_len, scale)
+        pelvis_x = x + pose["travel"] * 40.0 * scale + pelvis_shift
         pelvis_y = y - (self.thigh_len + self.shin_len - 6 * scale) + pose["dip"]
 
-        lean = math.sin(cycle * 0.5) * 0.08
-        neck_x = pelvis_x + math.sin(lean) * self.spine_len * 0.15
-        neck_y = pelvis_y - math.cos(lean) * self.spine_len
+        neck_x = pelvis_x + chest_shift + math.sin(torso_roll) * self.spine_len * 0.12
+        neck_y = pelvis_y - math.cos(torso_roll) * self.spine_len
         chest_y = pelvis_y - self.spine_len * 0.55
 
-        foot_a_x = x + math.sin(cycle * 0.5) * pose["step_w"]
-        foot_a_y = y - max(0.0, -math.cos(cycle * 0.5)) * (12 * scale)
-        foot_b_x = x - math.sin(cycle * 0.5) * pose["step_w"]
-        foot_b_y = y - max(0.0, math.cos(cycle * 0.5)) * (12 * scale)
+        foot_l, foot_r = _foot_targets(x + pose["travel"] * 40.0 * scale, y, pose, scale, facing)
 
         hip_a = (pelvis_x - 5 * scale, pelvis_y)
         hip_b = (pelvis_x + 5 * scale, pelvis_y)
-        knee_a = solve_2bone_ik(hip_a, (foot_a_x, foot_a_y), self.thigh_len, self.shin_len, bend_forward=True)
-        knee_b = solve_2bone_ik(hip_b, (foot_b_x, foot_b_y), self.thigh_len, self.shin_len, bend_forward=True)
+        knee_a = solve_2bone_ik(hip_a, foot_l, self.thigh_len, self.shin_len, bend_forward=True)
+        knee_b = solve_2bone_ik(hip_b, foot_r, self.thigh_len, self.shin_len, bend_forward=True)
 
         draw_capsule(surface, hip_b, knee_b, 4 * scale, COLOR_DAURA_SURUWAL)
-        draw_capsule(surface, knee_b, (foot_b_x, foot_b_y), 3 * scale, COLOR_DAURA_SURUWAL)
+        draw_capsule(surface, knee_b, foot_r, 3 * scale, COLOR_DAURA_SURUWAL)
         draw_capsule(surface, hip_a, knee_a, 4.5 * scale, COLOR_DAURA_SURUWAL)
-        draw_capsule(surface, knee_a, (foot_a_x, foot_a_y), 3.5 * scale, COLOR_DAURA_SURUWAL)
-        pygame.draw.ellipse(surface, (35, 30, 38), (foot_a_x - 6 * scale, foot_a_y - 3 * scale, 12 * scale, 5 * scale))
-        pygame.draw.ellipse(surface, (35, 30, 38), (foot_b_x - 6 * scale, foot_b_y - 3 * scale, 12 * scale, 5 * scale))
+        draw_capsule(surface, knee_a, foot_l, 3.5 * scale, COLOR_DAURA_SURUWAL)
+        pygame.draw.ellipse(surface, (35, 30, 38), (foot_l[0] - 6 * scale, foot_l[1] - 3 * scale, 12 * scale, 5 * scale))
+        pygame.draw.ellipse(surface, (35, 30, 38), (foot_r[0] - 6 * scale, foot_r[1] - 3 * scale, 12 * scale, 5 * scale))
 
         draw_capsule(surface, (pelvis_x, pelvis_y), (pelvis_x, chest_y), 7 * scale, COLOR_DAURA_SURUWAL)
         draw_capsule(surface, (pelvis_x, chest_y), (neck_x, neck_y), 6 * scale, COLOR_DAURA_SURUWAL)
         pygame.draw.line(surface, (160, 35, 35), (pelvis_x - 9 * scale, pelvis_y - 2), (pelvis_x + 9 * scale, pelvis_y - 2), int(6 * scale))
 
-        head_pos = (int(neck_x), int(neck_y - 10 * scale))
+        head_pos = (int(neck_x + head_shift), int(neck_y - 10 * scale))
         pygame.draw.ellipse(surface, COLOR_SKIN, (head_pos[0] - 8 * scale, head_pos[1] - 9 * scale, 16 * scale, 18 * scale))
         topi_poly = [
             (head_pos[0] - 8 * scale, head_pos[1] - 2 * scale), (head_pos[0] - 6 * scale, head_pos[1] - 11 * scale),
@@ -672,106 +836,102 @@ class MaleLeadDancer:
         pygame.draw.line(surface, COLOR_GOLD, (head_pos[0] - 4 * scale, head_pos[1] - 8 * scale), (head_pos[0] + 5 * scale, head_pos[1] - 8 * scale), 1)
 
         shoulder = (neck_x, neck_y + 4 * scale)
-        hand_l_angle = math.sin(cycle * pose["arm_speed"] + math.pi) * 0.65 + 0.75
-        hand_l = (shoulder[0] - math.sin(hand_l_angle) * 30 * scale, shoulder[1] + math.cos(hand_l_angle) * 24 * scale)
+        mudra_r = "flame_cup" if pose["routine"] != 2 else pose["mudra_r"]
+        hand_l = _resolve_mudra_hand(shoulder, pose["mudra_l"], pose, "l", scale, facing, is_lead_male=True)
+        hand_r = _resolve_mudra_hand(shoulder, mudra_r, pose, "r", scale, facing, is_lead_male=True)
+
+        # Stick hit visual for Ghintang Ghisi
+        if pose["mudra_l"] == "stick_hit" and pose["mudra_r"] == "stick_hit":
+            stick_y = shoulder[1] + 10 * scale
+            pygame.draw.line(surface, (120, 85, 45), (hand_l[0] - 8 * scale, stick_y), (hand_r[0] + 8 * scale, stick_y), int(3 * scale))
+
         elbow_l = solve_2bone_ik(shoulder, hand_l, self.arm_len, self.forearm_len, bend_forward=False)
+        elbow_r = solve_2bone_ik(shoulder, hand_r, self.arm_len, self.forearm_len, bend_forward=True)
         draw_capsule(surface, shoulder, elbow_l, 3 * scale, COLOR_DAURA_SURUWAL)
         draw_capsule(surface, elbow_l, hand_l, 2.5 * scale, COLOR_SKIN)
-        pygame.draw.arc(surface, COLOR_STEEL, (hand_l[0] - 8, hand_l[1] - 14, 20, 24), 0.2, math.pi * 0.85, 3)
-
-        fire_hand_x = shoulder[0] + (20 * scale + math.sin(cycle * pose["arm_speed"] * 0.5) * 6.0)
-        fire_hand_y = shoulder[1] - (16 * scale + math.cos(cycle * pose["arm_speed"] * 0.5) * 6.0)
-        elbow_r = solve_2bone_ik(shoulder, (fire_hand_x, fire_hand_y), self.arm_len, self.forearm_len, bend_forward=True)
+        if pose["mudra_l"] != "stick_hit":
+            pygame.draw.arc(surface, COLOR_STEEL, (hand_l[0] - 8, hand_l[1] - 14, 20, 24), 0.2, math.pi * 0.85, 3)
         draw_capsule(surface, shoulder, elbow_r, 3 * scale, COLOR_DAURA_SURUWAL)
-        draw_capsule(surface, elbow_r, (fire_hand_x, fire_hand_y), 2.5 * scale, COLOR_SKIN)
-        pygame.draw.circle(surface, COLOR_SKIN, (int(fire_hand_x), int(fire_hand_y)), int(4 * scale))
+        draw_capsule(surface, elbow_r, hand_r, 2.5 * scale, COLOR_SKIN)
+        pygame.draw.circle(surface, COLOR_SKIN, (int(hand_r[0]), int(hand_r[1])), int(4 * scale))
 
-        self.fire.update_and_draw(surface, fire_hand_x, fire_hand_y - 2, intensity=0.85 + timing["beat_pulse"] * 0.3)
+        if mudra_r == "flame_cup":
+            self.fire.update_and_draw(surface, hand_r[0], hand_r[1] - 2, intensity=0.8 + timing["beat_pulse"] * 0.25)
 
 
 # ==============================================================================
 # FEMALE FOLK DANCER
 # ==============================================================================
 class FemaleFolkDancer:
-    def __init__(self, offset_phase=0.0):
+    def __init__(self, phase_beats=0.0):
         self.scale = 1.55
         self.thigh_len = 32 * self.scale
         self.shin_len = 30 * self.scale
         self.spine_len = 36 * self.scale
         self.arm_len = 20 * self.scale
         self.forearm_len = 19 * self.scale
-        self.phase = offset_phase
+        self.phase_beats = phase_beats
 
-    def draw(self, surface, x, y, timing, step_mode=0, look_right=True):
+    def draw(self, surface, x, y, timing, look_right=True):
         scale = self.scale
         facing = 1.0 if look_right else -1.0
-        t_timing = {
-            **timing,
-            "cycle": timing["cycle"] + self.phase,
-            "bar_cycle": timing["bar_cycle"] + self.phase * 0.5,
-            "beat_index": timing["beat_index"] + self.phase / (math.pi * 2),
-        }
-        pose = choreography_pose(step_mode, t_timing, scale)
-        cycle = t_timing["cycle"]
+        pose = get_newari_pose(timing, phase_beats=self.phase_beats, scale=1.0)
 
-        pelvis_x = x + pose["sway"]
+        pelvis_shift, chest_shift, head_shift, torso_roll = _tribhanga_offsets(pose, self.spine_len, scale)
+        pelvis_x = x + pose["travel"] * 36.0 * scale * facing + pelvis_shift
         pelvis_y = y - (self.thigh_len + self.shin_len - 6 * scale) + pose["dip"]
-        torso_roll = math.sin(cycle * 0.5) * 0.12
-        neck_x = pelvis_x + math.sin(torso_roll) * self.spine_len * 0.12
+
+        neck_x = pelvis_x + chest_shift + math.sin(torso_roll) * self.spine_len * 0.1
         neck_y = pelvis_y - math.cos(torso_roll) * self.spine_len
         chest_y = pelvis_y - self.spine_len * 0.5
 
-        foot_a_x = x + math.sin(cycle * 0.5) * pose["step_w"] * facing
-        foot_a_y = y - max(0.0, -math.cos(cycle * 0.5)) * (10 * scale)
-        foot_b_x = x - math.sin(cycle * 0.5) * pose["step_w"] * facing
-        foot_b_y = y - max(0.0, math.cos(cycle * 0.5)) * (10 * scale)
+        foot_l, foot_r = _foot_targets(x + pose["travel"] * 36.0 * scale * facing, y, pose, scale, facing)
 
         hip_l = (pelvis_x - 4 * scale, pelvis_y)
         hip_r = (pelvis_x + 4 * scale, pelvis_y)
-        knee_l = solve_2bone_ik(hip_l, (foot_a_x, foot_a_y), self.thigh_len, self.shin_len, bend_forward=True)
-        knee_r = solve_2bone_ik(hip_r, (foot_b_x, foot_b_y), self.thigh_len, self.shin_len, bend_forward=True)
+        knee_l = solve_2bone_ik(hip_l, foot_l, self.thigh_len, self.shin_len, bend_forward=True)
+        knee_r = solve_2bone_ik(hip_r, foot_r, self.thigh_len, self.shin_len, bend_forward=True)
 
+        pleat_extra = pose["pleat_sway"] * 12.0 * scale
         patasi_poly = [
             (pelvis_x - 14 * scale, pelvis_y), (pelvis_x + 14 * scale, pelvis_y),
-            (foot_b_x + 18 * scale * facing, y), (foot_a_x - 12 * scale * facing, y),
+            (foot_r[0] + (18 * scale + pleat_extra) * facing, y),
+            (foot_l[0] - (12 * scale - pleat_extra) * facing, y),
         ]
         pygame.draw.polygon(surface, COLOR_HAKU_PATASI_BLACK, patasi_poly)
-        pygame.draw.line(surface, COLOR_HAKU_PATASI_RED, (foot_a_x - 12 * scale * facing, y - 4), (foot_b_x + 18 * scale * facing, y - 4), int(5 * scale))
+        pygame.draw.line(surface, COLOR_HAKU_PATASI_RED, (foot_l[0] - 12 * scale * facing, y - 4), (foot_r[0] + 18 * scale * facing, y - 4), int(5 * scale))
 
         draw_capsule(surface, hip_l, knee_l, 3.5 * scale, COLOR_HAKU_PATASI_BLACK)
-        draw_capsule(surface, knee_l, (foot_a_x, foot_a_y), 2.8 * scale, COLOR_HAKU_PATASI_BLACK)
+        draw_capsule(surface, knee_l, foot_l, 2.8 * scale, COLOR_HAKU_PATASI_BLACK)
         draw_capsule(surface, hip_r, knee_r, 3.5 * scale, COLOR_HAKU_PATASI_BLACK)
-        draw_capsule(surface, knee_r, (foot_b_x, foot_b_y), 2.8 * scale, COLOR_HAKU_PATASI_BLACK)
+        draw_capsule(surface, knee_r, foot_r, 2.8 * scale, COLOR_HAKU_PATASI_BLACK)
 
         pygame.draw.line(surface, COLOR_PATUKA_YELLOW, (pelvis_x - 12 * scale, pelvis_y - 2), (pelvis_x + 12 * scale, pelvis_y - 2), int(7 * scale))
         draw_capsule(surface, (pelvis_x, pelvis_y), (pelvis_x, chest_y), 6.5 * scale, COLOR_CHOLO_CRIMSON)
         draw_capsule(surface, (pelvis_x, chest_y), (neck_x, neck_y), 5.5 * scale, COLOR_CHOLO_CRIMSON)
 
-        head_pos = (int(neck_x), int(neck_y - 10 * scale))
+        head_pos = (int(neck_x + head_shift), int(neck_y - 10 * scale))
         pygame.draw.ellipse(surface, COLOR_SKIN, (head_pos[0] - 7 * scale, head_pos[1] - 8 * scale, 14 * scale, 16 * scale))
         pygame.draw.circle(surface, (15, 12, 18), (head_pos[0] - int(6 * scale * facing), head_pos[1] - 2), int(5 * scale))
         pygame.draw.circle(surface, COLOR_MARIGOLD_ORANGE, (head_pos[0] - int(7 * scale * facing), head_pos[1] - 6), int(3.5 * scale))
         pygame.draw.line(surface, COLOR_GOLD, (head_pos[0] - 5, head_pos[1] - 6), (head_pos[0] + 5, head_pos[1] - 6), 2)
 
         shoulder = (neck_x, neck_y + 4 * scale)
-        if step_mode == 3:
-            clap = math.sin(cycle * 2) * 4 * scale
-            hand1 = (neck_x + (8 * scale + clap) * facing, neck_y + 10 * scale)
-            hand2 = (neck_x - (2 * scale - clap) * facing, neck_y + 10 * scale)
-        else:
-            arm1_ang = math.sin(cycle * pose["arm_speed"]) * 0.8 - 0.55
-            hand1 = (shoulder[0] + math.cos(arm1_ang) * 34 * scale * facing, shoulder[1] + math.sin(arm1_ang) * 26 * scale - 12 * scale)
-            arm2_ang = math.cos(cycle * pose["arm_speed"]) * 0.65 + 0.75
-            hand2 = (shoulder[0] - math.cos(arm2_ang) * 28 * scale * facing, shoulder[1] + math.sin(arm2_ang) * 22 * scale)
+        hand_l = _resolve_mudra_hand(shoulder, pose["mudra_l"], pose, "l", scale, facing)
+        hand_r = _resolve_mudra_hand(shoulder, pose["mudra_r"], pose, "r", scale, facing)
 
-        elbow1 = solve_2bone_ik(shoulder, hand1, self.arm_len, self.forearm_len, bend_forward=True)
-        elbow2 = solve_2bone_ik(shoulder, hand2, self.arm_len, self.forearm_len, bend_forward=False)
-        draw_capsule(surface, shoulder, elbow1, 2.8 * scale, COLOR_CHOLO_CRIMSON)
-        draw_capsule(surface, elbow1, hand1, 2.2 * scale, COLOR_SKIN)
-        pygame.draw.circle(surface, COLOR_GOLD, (int(hand1[0]), int(hand1[1])), int(3 * scale))
-        draw_capsule(surface, shoulder, elbow2, 2.8 * scale, COLOR_CHOLO_CRIMSON)
-        draw_capsule(surface, elbow2, hand2, 2.2 * scale, COLOR_SKIN)
-        pygame.draw.circle(surface, COLOR_GOLD, (int(hand2[0]), int(hand2[1])), int(3 * scale))
+        if pose["mudra_l"] == "stick_hit":
+            stick_y = shoulder[1] + 8 * scale
+            pygame.draw.line(surface, (120, 85, 45), (hand_l[0] - 6 * scale, stick_y), (hand_r[0] + 6 * scale, stick_y), int(2 * scale))
+
+        elbow_l = solve_2bone_ik(shoulder, hand_l, self.arm_len, self.forearm_len, bend_forward=True)
+        elbow_r = solve_2bone_ik(shoulder, hand_r, self.arm_len, self.forearm_len, bend_forward=False)
+        draw_capsule(surface, shoulder, elbow_l, 2.8 * scale, COLOR_CHOLO_CRIMSON)
+        draw_capsule(surface, elbow_l, hand_l, 2.2 * scale, COLOR_SKIN)
+        pygame.draw.circle(surface, COLOR_GOLD, (int(hand_l[0]), int(hand_l[1])), int(3 * scale))
+        draw_capsule(surface, shoulder, elbow_r, 2.8 * scale, COLOR_CHOLO_CRIMSON)
+        draw_capsule(surface, elbow_r, hand_r, 2.2 * scale, COLOR_SKIN)
+        pygame.draw.circle(surface, COLOR_GOLD, (int(hand_r[0]), int(hand_r[1])), int(3 * scale))
 
 
 # ==============================================================================
@@ -779,8 +939,7 @@ class FemaleFolkDancer:
 # ==============================================================================
 def render_frame(current_sec, narayan_gopal, male_lead, female_dancers):
     timing = beat_clock(current_sec)
-    current_step_mode = int((timing["bar_index"] // 2) % 4)
-    step_title, step_desc = DANCE_ROUTINES[current_step_mode]
+    current_step_mode, (step_title, step_desc) = get_routine_info(timing)
 
     frame = pygame.Surface((WIDTH, HEIGHT))
     ground_y = HEIGHT - 80
@@ -794,14 +953,16 @@ def render_frame(current_sec, narayan_gopal, male_lead, female_dancers):
 
     narayan_gopal.draw(frame, timing)
 
-    # Lead drifts gently on bar boundaries (2 bars = ~6.67s)
-    lead_x = WIDTH * 0.58 + math.sin(timing["bar_cycle"] * 0.25) * 28
-    male_lead.draw(frame, lead_x, ground_y, timing, step_mode=current_step_mode)
+    # Lead travels in a slow bar-long arc (not per-frame sine jitter)
+    lead_pose = get_newari_pose(timing, phase_beats=0.0)
+    lead_x = WIDTH * 0.58 + lead_pose["travel"] * 55 + math.sin(timing["bar_cycle"] * 0.5) * 12
+    male_lead.draw(frame, lead_x, ground_y, timing, phase_beats=0.0)
 
     dancer_x_bases = [WIDTH * 0.38, WIDTH * 0.76, WIDTH * 0.90]
     for i, dancer in enumerate(female_dancers):
-        dx = dancer_x_bases[i] + math.sin(timing["cycle"] + dancer.phase) * 14
-        dancer.draw(frame, dx, ground_y, timing, step_mode=current_step_mode, look_right=(dx < lead_x))
+        fpose = get_newari_pose(timing, phase_beats=dancer.phase_beats)
+        dx = dancer_x_bases[i] + fpose["travel"] * 45 + math.sin(timing["bar_cycle"] * 0.5 + i * 0.8) * 10
+        dancer.draw(frame, dx, ground_y, timing, look_right=(dx < lead_x))
 
     return frame, timing, current_step_mode, step_title, step_desc
 
@@ -843,9 +1004,9 @@ def main():
     narayan_gopal = NarayanGopalPerformer(base_x=135, base_y=HEIGHT - 75)
     male_lead = MaleLeadDancer()
     female_dancers = [
-        FemaleFolkDancer(offset_phase=0.0),
-        FemaleFolkDancer(offset_phase=math.pi * 0.5),
-        FemaleFolkDancer(offset_phase=math.pi),
+        FemaleFolkDancer(phase_beats=0.0),
+        FemaleFolkDancer(phase_beats=2.0),
+        FemaleFolkDancer(phase_beats=4.0),
     ]
 
     start_ticks = pygame.time.get_ticks()
