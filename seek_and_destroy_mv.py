@@ -314,36 +314,13 @@ class HimalayanStageRenderer:
         ctx.clip()
         snow_g = cairo.LinearGradient(0, ymin - 6, 0, ymin + 155)
         a = snow
-        snow_g.add_color_stop_rgba(0.00, 0.97, 0.98, 1.00, 0.88 * a)
-        snow_g.add_color_stop_rgba(0.18, 0.90, 0.92, 0.96, 0.50 * a)
-        snow_g.add_color_stop_rgba(0.45, 0.48, 0.52, 0.64, 0.14 * a)
+        snow_g.add_color_stop_rgba(0.00, 0.97, 0.98, 1.00, 0.82 * a)
+        snow_g.add_color_stop_rgba(0.20, 0.88, 0.90, 0.95, 0.42 * a)
+        snow_g.add_color_stop_rgba(0.48, 0.45, 0.50, 0.62, 0.12 * a)
         snow_g.add_color_stop_rgba(1.00, 0, 0, 0, 0.0)
         ctx.set_source(snow_g)
         ctx.paint()
-
-        # Couloir / face shade — long diagonal strokes, not crater dots
-        for i in range(3, len(pts) - 3, 5):
-            x0, y0 = pts[i]
-            x1, y1 = pts[min(i + 2, len(pts) - 1)]
-            ctx.set_source_rgba(0.10, 0.12, 0.20, 0.14 * a)
-            ctx.move_to(x0 + 2, y0 + 6)
-            ctx.line_to(x1 + 8, y1 + 12)
-            ctx.line_to((x0 + x1) * 0.5 + 25, max(y0, y1) + 70)
-            ctx.close_path()
-            ctx.fill()
         ctx.restore()
-
-        # Thin bright crest highlight along the ridgeline
-        ctx.set_source_rgba(0.95, 0.96, 0.98, 0.35 * snow)
-        ctx.set_line_width(2.2)
-        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
-        ctx.move_to(*pts[0])
-        for i in range(len(pts) - 1):
-            x0, y0 = pts[i]
-            x1, y1 = pts[i + 1]
-            dx = x1 - x0
-            ctx.curve_to(x0 + dx * 0.5, y0, x1 - dx * 0.5, y1, x1, y1)
-        ctx.stroke()
 
     def _draw_courtyard_floor(self, ctx):
         """Traditional Nepali brick / stone courtyard (Durbar-square style)."""
