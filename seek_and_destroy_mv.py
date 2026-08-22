@@ -1654,9 +1654,9 @@ class MusicVideoDirector:
         screen.blit(bg_surface, (0, 0))
 
         # Lateral motion (incommensurate rates so travel stays visible)
-        dance_lat = math.sin(t * 0.85) * 70 + math.sin(t * 1.7) * 18
-        fight_orbit = math.sin(t * 1.15) * 70
-        fight_bob = math.sin(t * 2.05 + 0.6) * 28
+        dance_lat = math.sin(t * 0.85) * 80 + math.sin(t * 1.7) * 22
+        fight_orbit = math.sin(t * 1.15) * 95
+        fight_bob = math.sin(t * 2.05 + 0.6) * 32
 
         if scene == "INTRO_ESTABLISHING":
             guard_x = int(WINDOW_W * 0.5 + math.sin(t * 0.55) * 280)
@@ -1667,8 +1667,8 @@ class MusicVideoDirector:
         elif scene in ("SCENE_SINGING_1", "SCENE_SINGING_2"):
             twirl = scene == "SCENE_SINGING_2"
             # Dancers well clear of singer, sweeping laterally on the wings
-            female_x = int(40 + max(0, dance_lat + 40))
-            male_x = int(WINDOW_W - 300 - max(0, -dance_lat + 40))
+            female_x = int(10 + max(0, dance_lat + 50))
+            male_x = int(WINDOW_W - 270 - max(0, -dance_lat + 50))
             singer_x = WINDOW_W // 2 - 170
             screen.blit(self.dancers.render(t, which="female", is_twirling=twirl), (female_x, 200))
             screen.blit(self.dancers.render(t, which="male", is_twirling=twirl), (male_x, 200))
@@ -1716,13 +1716,13 @@ class MusicVideoDirector:
                 )
 
         elif scene == "SCENE_GRAND_FINALE":
-            # Spread finale: Lars kept well clear of the harmonium
-            het_x = int(5 + math.sin(t * 0.9) * 35)
-            lars_x = int(145 + math.sin(t * 1.1 + 0.8) * 40)
-            female_x = int(340 + dance_lat * 0.4)
-            singer_x = WINDOW_W // 2 + 70
-            male_x = int(WINDOW_W - 300 - dance_lat * 0.4)
-            guard_x = int(WINDOW_W - 150 + math.sin(t * 0.7) * 30)
+            # Spread finale: Metallica left wing, singer right-of-center, dancers on flanks
+            het_x = int(-10 + math.sin(t * 0.9) * 30)
+            lars_x = int(95 + math.sin(t * 1.1 + 0.8) * 35)
+            female_x = int(300 + dance_lat * 0.35)
+            singer_x = WINDOW_W // 2 + 100
+            male_x = int(WINDOW_W - 290 - dance_lat * 0.35)
+            guard_x = int(WINDOW_W - 140 + math.sin(t * 0.7) * 28)
 
             screen.blit(self.hetfield.render(t, is_swinging=False), (het_x, 220))
             screen.blit(self.ulrich.render(t, is_twirling=True), (lars_x, 220))
