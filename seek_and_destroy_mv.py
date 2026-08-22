@@ -240,98 +240,110 @@ class HimalayanStageRenderer:
         ctx.fill()
 
     def _draw_mountain_layers(self, ctx):
-        # Far indigo range (soft atmospheric peaks)
-        ctx.set_source_rgb(0.13, 0.15, 0.26)
-        self._fill_curved_ridge(ctx, [
-            (-120, 405), (40, 315), (160, 345), (300, 280), (460, 330),
-            (620, 270), (800, 320), (980, 285), (1140, 340), (1220, 370),
-        ], base_y=self.h)
+        """Hand-shaped Himalayan massifs — broad shoulders, soft snow, no tent cones."""
+        # Far atmospheric wall (gentle rolls)
+        self._paint_massif(ctx, [
+            (-180, 400), (-20, 375), (120, 390), (280, 365), (440, 385),
+            (600, 360), (760, 380), (920, 355), (1080, 375), (1320, 385),
+        ], rock=(0.12, 0.14, 0.24), snow=0.15)
 
-        # Mid slate range
-        ctx.set_source_rgb(0.20, 0.24, 0.38)
-        self._fill_curved_ridge(ctx, [
-            (-120, 425), (80, 320), (200, 365), (360, 255), (520, 340),
-            (660, 205), (820, 325), (960, 245), (1120, 345), (1220, 385),
-        ], base_y=self.h)
+        # Mid range — long rolling crest, shallow cols
+        self._paint_massif(ctx, [
+            (-180, 425), (-40, 395), (80, 410), (220, 375), (360, 400),
+            (500, 355), (640, 385), (780, 340), (920, 375), (1060, 350),
+            (1200, 380), (1320, 400),
+        ], rock=(0.17, 0.21, 0.34), snow=0.45)
 
-        # Mid-range snow caps with shadowed lee slopes
-        for tip, left, right, shade_dx in [
-            ((360, 255), (300, 310), (420, 315), 22),
-            ((660, 205), (580, 290), (760, 300), 28),
-            ((960, 245), (900, 305), (1030, 310), 20),
-        ]:
-            ctx.set_source_rgb(0.88, 0.91, 0.96)
-            ctx.move_to(*left)
-            ctx.curve_to(left[0] + 20, tip[1] + 30, tip[0] - 15, tip[1] + 8, *tip)
-            ctx.curve_to(tip[0] + 18, tip[1] + 8, right[0] - 25, tip[1] + 35, *right)
+        # Near range — broad massifs / shoulders (avoid steep isolated spikes)
+        self._paint_massif(ctx, [
+            (-180, 448), (-20, 415), (100, 435), (240, 390), (380, 420),
+            (500, 360), (560, 355), (620, 365),  # wide shoulder plateau
+            (720, 325), (780, 330), (840, 355),  # broad main summit
+            (960, 345), (1040, 360), (1140, 340), (1240, 370), (1320, 415),
+        ], rock=(0.23, 0.27, 0.41), snow=0.72)
+
+        # Soft foothill roll
+        self._paint_massif(ctx, [
+            (-180, 458), (0, 448), (160, 455), (340, 442), (520, 452),
+            (700, 440), (880, 450), (1060, 442), (1320, 455),
+        ], rock=(0.14, 0.16, 0.24), snow=0.0)
+
+    def _paint_massif(self, ctx, ridge, rock, snow):
+        # Densify with soft midpoints so the silhouette rolls instead of tents
+        pts = []
+        for i, (x, y) in enumerate(ridge):
+            pts.append((float(x), float(y)))
+            if i < len(ridge) - 1:
+                x1, y1 = ridge[i + 1]
+                for t, drop in ((0.28, 0.08), (0.5, 0.11), (0.72, 0.07)):
+                    ix = x + (x1 - x) * t
+                    iy = y + (y1 - y) * t
+                    # Pull midpoints down into saddles (broadens peaks)
+                    iy += abs(x1 - x) * drop + 4
+                    # Tiny ridge notches for crag without making cones
+                    iy += 3.5 * math.sin(ix * 0.07 + i * 1.3)
+                    pts.append((ix, iy))
+
+        ymin = min(p[1] for p in pts)
+
+        def trace():
+            ctx.move_to(pts[0][0], self.h)
+            ctx.line_to(*pts[0])
+            for i in range(len(pts) - 1):
+                x0, y0 = pts[i]
+                x1, y1 = pts[i + 1]
+                dx = x1 - x0
+                ctx.curve_to(x0 + dx * 0.5, y0, x1 - dx * 0.5, y1, x1, y1)
+            ctx.line_to(pts[-1][0], self.h)
             ctx.close_path()
-            ctx.fill()
-            ctx.set_source_rgba(0.40, 0.48, 0.62, 0.40)
-            ctx.move_to(*tip)
-            ctx.line_to(tip[0] + shade_dx, tip[1] + 55)
-            ctx.line_to(right[0] - 10, right[1])
-            ctx.close_path()
-            ctx.fill()
 
-        # Near range — cooler rock
-        ctx.set_source_rgb(0.26, 0.30, 0.44)
-        self._fill_curved_ridge(ctx, [
-            (-120, 445), (60, 350), (180, 395), (320, 295), (470, 375),
-            (600, 225), (750, 355), (890, 275), (1040, 365), (1180, 305), (1220, 400),
-        ], base_y=self.h)
-
-        # Near snowfields
-        for tip, left, right, shade_dx in [
-            ((320, 295), (250, 350), (390, 355), 18),
-            ((600, 225), (510, 310), (700, 320), 26),
-            ((890, 275), (820, 335), (970, 340), 18),
-            ((1180, 305), (1120, 350), (1220, 350), 14),
-        ]:
-            snow = cairo.LinearGradient(tip[0] - 40, tip[1], tip[0] + 40, tip[1] + 70)
-            snow.add_color_stop_rgb(0.0, 0.95, 0.96, 0.98)
-            snow.add_color_stop_rgb(1.0, 0.78, 0.82, 0.90)
-            ctx.set_source(snow)
-            ctx.move_to(*left)
-            ctx.curve_to(left[0] + 25, tip[1] + 25, tip[0] - 12, tip[1] + 5, *tip)
-            ctx.curve_to(tip[0] + 16, tip[1] + 5, right[0] - 20, tip[1] + 30, *right)
-            ctx.close_path()
-            ctx.fill()
-            ctx.set_source_rgba(0.42, 0.50, 0.65, 0.38)
-            ctx.move_to(*tip)
-            ctx.line_to(tip[0] + shade_dx, tip[1] + 50)
-            ctx.line_to(right[0] - 8, right[1])
-            ctx.close_path()
-            ctx.fill()
-
-        # Rocky foothills
-        ctx.set_source_rgb(0.16, 0.18, 0.28)
-        self._fill_curved_ridge(ctx, [
-            (-120, 458), (90, 435), (240, 450), (400, 428), (580, 452),
-            (760, 435), (940, 450), (1100, 432), (1220, 452),
-        ], base_y=self.h)
-
-    def _fill_curved_ridge(self, ctx, peaks, base_y):
-        """Smooth Himalayan silhouette through peak waypoints."""
-        ctx.move_to(peaks[0][0], base_y)
-        ctx.line_to(*peaks[0])
-        for i in range(len(peaks) - 1):
-            x0, y0 = peaks[i]
-            x1, y1 = peaks[i + 1]
-            mx = (x0 + x1) / 2
-            # Valley sag between peaks
-            my = max(y0, y1) + abs(x1 - x0) * 0.08
-            ctx.curve_to(x0 + (mx - x0) * 0.55, y0, mx - (x1 - mx) * 0.15, my, mx, my)
-            ctx.curve_to(mx + (x1 - mx) * 0.15, my, x1 - (x1 - mx) * 0.55, y1, x1, y1)
-        ctx.line_to(peaks[-1][0], base_y)
-        ctx.close_path()
+        trace()
+        body = cairo.LinearGradient(0, ymin, 0, 470)
+        body.add_color_stop_rgb(0.0, min(1, rock[0] * 1.2), min(1, rock[1] * 1.15), min(1, rock[2] * 1.1))
+        body.add_color_stop_rgb(0.55, *rock)
+        body.add_color_stop_rgb(1.0, rock[0] * 0.7, rock[1] * 0.7, rock[2] * 0.75)
+        ctx.set_source(body)
         ctx.fill()
 
-    def _fill_ridge(self, ctx, points):
-        ctx.move_to(*points[0])
-        for p in points[1:]:
-            ctx.line_to(*p)
-        ctx.close_path()
-        ctx.fill()
+        if snow <= 0.01:
+            return
+
+        # Elevation snow wash only — no per-peak white caps (those read as tent tops)
+        ctx.save()
+        trace()
+        ctx.clip()
+        snow_g = cairo.LinearGradient(0, ymin - 6, 0, ymin + 155)
+        a = snow
+        snow_g.add_color_stop_rgba(0.00, 0.97, 0.98, 1.00, 0.88 * a)
+        snow_g.add_color_stop_rgba(0.18, 0.90, 0.92, 0.96, 0.50 * a)
+        snow_g.add_color_stop_rgba(0.45, 0.48, 0.52, 0.64, 0.14 * a)
+        snow_g.add_color_stop_rgba(1.00, 0, 0, 0, 0.0)
+        ctx.set_source(snow_g)
+        ctx.paint()
+
+        # Couloir / face shade — long diagonal strokes, not crater dots
+        for i in range(3, len(pts) - 3, 5):
+            x0, y0 = pts[i]
+            x1, y1 = pts[min(i + 2, len(pts) - 1)]
+            ctx.set_source_rgba(0.10, 0.12, 0.20, 0.14 * a)
+            ctx.move_to(x0 + 2, y0 + 6)
+            ctx.line_to(x1 + 8, y1 + 12)
+            ctx.line_to((x0 + x1) * 0.5 + 25, max(y0, y1) + 70)
+            ctx.close_path()
+            ctx.fill()
+        ctx.restore()
+
+        # Thin bright crest highlight along the ridgeline
+        ctx.set_source_rgba(0.95, 0.96, 0.98, 0.35 * snow)
+        ctx.set_line_width(2.2)
+        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+        ctx.move_to(*pts[0])
+        for i in range(len(pts) - 1):
+            x0, y0 = pts[i]
+            x1, y1 = pts[i + 1]
+            dx = x1 - x0
+            ctx.curve_to(x0 + dx * 0.5, y0, x1 - dx * 0.5, y1, x1, y1)
+        ctx.stroke()
 
     def _draw_courtyard_floor(self, ctx):
         """Traditional Nepali brick / stone courtyard (Durbar-square style)."""
