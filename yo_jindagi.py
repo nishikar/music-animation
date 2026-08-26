@@ -45,8 +45,9 @@ S4_END = 258.0   # 4:18
 S3_BARREL_ZOOM = 140.0
 S3_FIRE = 156.0       # muzzle blast just before razor cut
 S3_RAZOR = 160.0
+S4_SHATTER = 198.0    # bangle shatter moment
+S4_PLANETS = 208.0    # Earth & Saturn after shatter debris
 S4_STRAP = 220.0
-S4_SHATTER = 198.0  # bangle shatter moment
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_EXPORT = SCRIPT_DIR / "yo_jindagi.mp4"
@@ -859,8 +860,19 @@ def draw_hollow_silhouette(
         ctx.line_to(0, -65)
         ctx.stroke()
 
+    # Coat rim light against streetlamp glow — makes garment shapes distinct
+    set_rgb(ctx, AMBER, 0.18)
+    ctx.set_line_width(1.4)
+    ctx.move_to(-shoulder - 2, -100)
+    ctx.curve_to(-shoulder - 4, -70, -hip - 4, hem + 4, -hip - 2, hem)
+    ctx.stroke()
+    set_rgb(ctx, COLD_WHITE, 0.12)
+    ctx.move_to(shoulder + 2, -100)
+    ctx.curve_to(shoulder + 4, -70, hip + 4, hem + 4, hip + 2, hem)
+    ctx.stroke()
+
     # Hats & hair drawn AFTER xray so silhouette variety always reads
-    set_rgb(ctx, sil, min(1.0, sil_a + 0.15))
+    set_rgb(ctx, sil, 1.0)
     if hair == "long":
         ctx.move_to(-14, -142)
         ctx.curve_to(-22, -128, -20, -100, -16, -88)
@@ -1234,7 +1246,8 @@ def draw_gun_pillow_scene(
         set_rgb(ctx, (1.0, 0.75, 0.35), 0.55 * flash)
         ctx.paint()
 
-    z = 1.0 + zoom_t * 3.8
+    # Mild push-in only — fire must remain a readable wide/medium shot
+    z = 1.0 + zoom_t * 0.25
     ctx.save()
     cx, cy = w * 0.55, h * 0.55
     ctx.translate(cx, cy)
@@ -1306,172 +1319,201 @@ def draw_gun_pillow_scene(
     ctx.fill()
     ctx.restore()
 
-    if 0 < fire_t < 1.8:
-        flash = clamp(1.0 - fire_t * 1.8)
+    if 0 < fire_t < 2.2:
+        flash = clamp(1.0 - fire_t * 1.2)
         ctx.save()
-        ctx.translate(mx + 30, my)
-        for k in range(7):
-            ang = -0.6 + k * 0.2
-            length = (40 + k * 8) * flash
+        ctx.translate(mx + 20, my)
+        # Large muzzle bloom — readable without zoom
+        bloom = cairo.RadialGradient(0, 0, 4, 80, 0, 220)
+        bloom.add_color_stop_rgba(0, 1.0, 0.98, 0.85, 0.95 * flash)
+        bloom.add_color_stop_rgba(0.15, 1.0, 0.7, 0.2, 0.7 * flash)
+        bloom.add_color_stop_rgba(0.45, 0.9, 0.25, 0.05, 0.35 * flash)
+        bloom.add_color_stop_rgba(1, 0.1, 0.1, 0.12, 0)
+        ctx.set_source(bloom)
+        ctx.arc(60, 0, 220, 0, 2 * math.pi)
+        ctx.fill()
+        for k in range(9):
+            ang = -0.85 + k * 0.21
+            length = (90 + k * 14) * flash
             flame = cairo.LinearGradient(0, 0, math.cos(ang) * length, math.sin(ang) * length)
-            flame.add_color_stop_rgba(0, 1, 0.95, 0.7, 0.95 * flash)
-            flame.add_color_stop_rgba(0.4, 1, 0.45, 0.1, 0.7 * flash)
-            flame.add_color_stop_rgba(1, 0.4, 0.05, 0.0, 0)
+            flame.add_color_stop_rgba(0, 1, 0.98, 0.8, 0.95 * flash)
+            flame.add_color_stop_rgba(0.35, 1, 0.45, 0.08, 0.75 * flash)
+            flame.add_color_stop_rgba(1, 0.3, 0.05, 0.0, 0)
             ctx.set_source(flame)
-            ctx.move_to(0, -4)
+            ctx.move_to(0, -8)
             ctx.line_to(math.cos(ang) * length, math.sin(ang) * length)
-            ctx.line_to(0, 4)
+            ctx.line_to(0, 8)
             ctx.close_path()
             ctx.fill()
-        blast = cairo.RadialGradient(20, 0, 2, 40, 0, 90)
-        blast.add_color_stop_rgba(0, 1, 0.9, 0.5, 0.8 * flash)
-        blast.add_color_stop_rgba(0.3, 0.9, 0.3, 0.05, 0.35 * flash)
-        blast.add_color_stop_rgba(1, 0.2, 0.2, 0.2, 0)
-        ctx.set_source(blast)
-        ctx.arc(30, 0, 90, 0, 2 * math.pi)
-        ctx.fill()
+        # Tracer streak
+        set_rgb(ctx, AMBER, 0.85 * flash)
+        ctx.set_line_width(4)
+        ctx.move_to(10, 0)
+        ctx.line_to(280 * flash, -10)
+        ctx.stroke()
+        set_rgb(ctx, COLD_WHITE, 0.7 * flash)
+        ctx.set_line_width(1.5)
+        ctx.move_to(10, 0)
+        ctx.line_to(260 * flash, -8)
+        ctx.stroke()
         ctx.restore()
-        for i in range(5):
-            age = fire_t - i * 0.12
+        for i in range(7):
+            age = fire_t - i * 0.1
             if age < 0:
                 continue
-            rr = 30 + age * 120
-            set_rgb(ctx, SLATE, max(0, 0.35 - age * 0.18))
-            ctx.set_line_width(max(0.5, 8 - age * 3))
+            rr = 40 + age * 140
+            set_rgb(ctx, SLATE, max(0, 0.4 - age * 0.15))
+            ctx.set_line_width(max(0.5, 14 - age * 4))
             ctx.save()
-            ctx.translate(mx + 40 + age * 80, my - age * 20)
-            ctx.scale(1.6, 0.7)
+            ctx.translate(mx + 50 + age * 100, my - age * 25)
+            ctx.scale(1.8, 0.75)
             ctx.arc(0, 0, rr, 0, 2 * math.pi)
             ctx.stroke()
             ctx.restore()
 
-    fig_a = 1.0 - smoothstep(0.3, 0.85, zoom_t)
+    # Sitting smoker perched on the barrel (upright — not reclining)
+    fig_a = 1.0 - smoothstep(0.55, 0.95, zoom_t)
     if fig_a > 0.02:
         ctx.save()
-        ctx.translate(mx - 200, by0 + 20)
-        ctx.rotate(-0.1)
+        # Seat near mid-barrel, facing muzzle (right) — larger readable figure
+        seat_x = mx - 320
+        seat_y = by0 - 5
+        ctx.translate(seat_x, seat_y)
+        ctx.scale(1.45, 1.45)
 
-        set_rgb(ctx, (0.0, 0.0, 0.0), 0.45 * fig_a)
+        # Contact shadow on barrel
+        set_rgb(ctx, (0, 0, 0), 0.4 * fig_a)
         ctx.save()
-        ctx.scale(1.0, 0.35)
-        ctx.arc(40, 40, 120, 0, 2 * math.pi)
+        ctx.scale(1.0, 0.28)
+        ctx.arc(0, 40, 55, 0, 2 * math.pi)
         ctx.fill()
         ctx.restore()
 
-        set_rgb(ctx, (0.04, 0.04, 0.05), 0.98 * fig_a)
-        ctx.set_line_width(14)
-        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
-        ctx.move_to(-30, 18)
-        ctx.curve_to(-70, 30, -110, 10, -130, -5)
-        ctx.stroke()
-        ctx.move_to(-30, 22)
-        ctx.curve_to(-60, 45, -90, 50, -100, 35)
-        ctx.stroke()
-        ctx.set_line_width(8)
-        ctx.move_to(-130, -5)
-        ctx.line_to(-145, -8)
-        ctx.stroke()
-
+        # Dangling legs over barrel sides
         set_rgb(ctx, (0.05, 0.05, 0.06), 0.98 * fig_a)
-        ctx.move_to(-40, 5)
-        ctx.curve_to(-10, 28, 40, 30, 70, 12)
-        ctx.curve_to(50, 40, -20, 42, -45, 22)
-        ctx.close_path()
-        ctx.fill()
-
-        set_rgb(ctx, (0.06, 0.055, 0.05), 0.98 * fig_a)
-        ctx.move_to(50, 8)
-        ctx.curve_to(90, -25, 140, -35, 175, -18)
-        ctx.curve_to(180, 5, 100, 35, 55, 28)
-        ctx.close_path()
-        ctx.fill()
-        set_rgb(ctx, (0.12, 0.10, 0.09), 0.7 * fig_a)
-        ctx.move_to(90, -5)
-        ctx.line_to(150, -12)
-        ctx.line_to(145, 8)
-        ctx.line_to(85, 12)
-        ctx.close_path()
-        ctx.fill()
-
-        set_rgb(ctx, (0.07, 0.06, 0.055), 0.98 * fig_a)
-        ctx.set_line_width(11)
-        ctx.move_to(100, 0)
-        ctx.curve_to(130, -15, 160, -28, 185, -22)
-        ctx.stroke()
-        ctx.arc(188, -22, 7, 0, 2 * math.pi)
-        ctx.fill()
-
-        ctx.set_line_width(10)
-        ctx.move_to(80, 15)
-        ctx.curve_to(40, 35, -10, 40, -50, 25)
-        ctx.stroke()
-
-        set_rgb(ctx, (0.08, 0.07, 0.065), 0.98 * fig_a)
-        ctx.set_line_width(12)
-        ctx.move_to(165, -15)
-        ctx.line_to(195, -28)
-        ctx.stroke()
-        head = cairo.RadialGradient(205, -38, 4, 210, -32, 30)
-        head.add_color_stop_rgb(0, 0.18, 0.15, 0.13)
-        head.add_color_stop_rgb(1, 0.04, 0.035, 0.03)
-        ctx.set_source(head)
-        ctx.save()
-        ctx.translate(210, -34)
-        ctx.scale(1.15, 1.0)
-        ctx.arc(0, 0, 26, 0, 2 * math.pi)
-        ctx.fill()
-        ctx.restore()
-        set_rgb(ctx, (0.12, 0.10, 0.09), 0.8 * fig_a)
-        ctx.set_line_width(2)
-        ctx.move_to(228, -34)
-        ctx.line_to(238, -30)
-        ctx.stroke()
-        ctx.move_to(218, -38)
-        ctx.curve_to(224, -40, 230, -39, 234, -36)
-        ctx.stroke()
-        set_rgb(ctx, (0.02, 0.02, 0.025), 0.95 * fig_a)
-        ctx.move_to(190, -45)
-        ctx.curve_to(200, -62, 230, -60, 235, -40)
-        ctx.line_to(220, -42)
-        ctx.close_path()
-        ctx.fill()
-        set_rgb(ctx, (0.1, 0.08, 0.07), 0.9 * fig_a)
-        ctx.arc(198, -32, 5, 0, 2 * math.pi)
-        ctx.fill()
-
-        cigar_x, cigar_y = 240, -28
-        set_rgb(ctx, BRONZE, 0.95 * fig_a)
-        ctx.set_line_width(4.5)
+        ctx.set_line_width(13)
         ctx.set_line_cap(cairo.LINE_CAP_ROUND)
-        ctx.move_to(232, -30)
-        ctx.line_to(258, -26)
+        # Near leg (front)
+        ctx.move_to(-8, 8)
+        ctx.curve_to(-5, 35, 5, 55, 12, 78)
         ctx.stroke()
-        set_rgb(ctx, (0.35, 0.35, 0.32), 0.9 * fig_a)
-        ctx.arc(258, -26, 2.5, 0, 2 * math.pi)
-        ctx.fill()
-        ember = 0.6 + 0.4 * math.sin(t * 8)
-        set_rgb(ctx, (1.0, 0.35, 0.05), ember * fig_a)
-        ctx.arc(256, -26, 2.2, 0, 2 * math.pi)
-        ctx.fill()
-        set_rgb(ctx, AMBER, 0.7 * ember * fig_a)
-        ctx.arc(255, -26, 1.2, 0, 2 * math.pi)
+        # Far leg
+        ctx.move_to(10, 6)
+        ctx.curve_to(18, 30, 22, 50, 28, 72)
+        ctx.stroke()
+        # Shoes
+        ctx.set_line_width(8)
+        ctx.move_to(12, 78)
+        ctx.line_to(28, 82)
+        ctx.stroke()
+        ctx.move_to(28, 72)
+        ctx.line_to(42, 74)
+        ctx.stroke()
+
+        # Trousers / seat on barrel
+        set_rgb(ctx, (0.06, 0.055, 0.05), 0.98 * fig_a)
+        ctx.move_to(-28, 0)
+        ctx.curve_to(-20, 22, 20, 24, 32, 4)
+        ctx.curve_to(24, -8, -16, -10, -28, 0)
+        ctx.close_path()
         ctx.fill()
 
-        for i in range(5):
-            sy = cigar_y - 8 - i * 14 - (t * 18 + i * 7) % 40
-            sx = cigar_x + 16 + math.sin(t * 1.5 + i) * 8 + i * 3
-            set_rgb(ctx, SLATE, (0.22 - i * 0.03) * fig_a)
+        # Torso upright
+        torso = cairo.LinearGradient(-20, -90, 20, 0)
+        torso.add_color_stop_rgb(0, 0.12, 0.11, 0.10)
+        torso.add_color_stop_rgb(1, 0.04, 0.04, 0.045)
+        ctx.set_source(torso)
+        ctx.move_to(-22, -5)
+        ctx.curve_to(-28, -50, -18, -95, -4, -108)
+        ctx.curve_to(14, -100, 26, -55, 24, -2)
+        ctx.curve_to(10, 8, -10, 8, -22, -5)
+        ctx.close_path()
+        ctx.fill()
+        # Coat lapel
+        set_rgb(ctx, (0.16, 0.14, 0.12), 0.7 * fig_a)
+        ctx.move_to(-2, -100)
+        ctx.line_to(6, -20)
+        ctx.line_to(-6, -18)
+        ctx.close_path()
+        ctx.fill()
+
+        # Shoulders / arms
+        set_rgb(ctx, (0.07, 0.06, 0.055), 0.98 * fig_a)
+        ctx.set_line_width(12)
+        # Left arm resting on thigh
+        ctx.move_to(-18, -70)
+        ctx.curve_to(-35, -40, -40, -10, -30, 10)
+        ctx.stroke()
+        # Right arm raised to mouth with cigar
+        ctx.move_to(16, -75)
+        ctx.curve_to(35, -70, 48, -55, 42, -42)
+        ctx.stroke()
+        ctx.arc(42, -42, 6, 0, 2 * math.pi)
+        ctx.fill()
+
+        # Neck + upright head (3/4 view)
+        set_rgb(ctx, (0.1, 0.08, 0.07), 0.98 * fig_a)
+        ctx.set_line_width(10)
+        ctx.move_to(0, -105)
+        ctx.line_to(4, -118)
+        ctx.stroke()
+        head = cairo.RadialGradient(2, -132, 3, 6, -128, 24)
+        head.add_color_stop_rgb(0, 0.22, 0.18, 0.15)
+        head.add_color_stop_rgb(1, 0.05, 0.04, 0.035)
+        ctx.set_source(head)
+        ctx.arc(4, -130, 20, 0, 2 * math.pi)
+        ctx.fill()
+        # Hair / hat brim
+        set_rgb(ctx, (0.02, 0.02, 0.025), 0.98 * fig_a)
+        ctx.arc(2, -138, 18, math.pi, 2 * math.pi)
+        ctx.fill()
+        ctx.rectangle(-16, -140, 36, 4)
+        ctx.fill()  # fedora brim
+        ctx.arc(2, -148, 12, math.pi, 2 * math.pi)
+        ctx.fill()
+        # Ear
+        set_rgb(ctx, (0.12, 0.09, 0.08), 0.9 * fig_a)
+        ctx.arc(-10, -128, 4, 0, 2 * math.pi)
+        ctx.fill()
+        # Nose / brow
+        set_rgb(ctx, (0.14, 0.11, 0.09), 0.85 * fig_a)
+        ctx.set_line_width(1.8)
+        ctx.move_to(14, -132)
+        ctx.line_to(22, -128)
+        ctx.stroke()
+        ctx.move_to(10, -136)
+        ctx.curve_to(16, -138, 20, -136, 22, -132)
+        ctx.stroke()
+
+        # Cigar from lips / hand
+        set_rgb(ctx, BRONZE, 0.98 * fig_a)
+        ctx.set_line_width(4.2)
+        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+        ctx.move_to(18, -124)
+        ctx.line_to(48, -118)
+        ctx.stroke()
+        set_rgb(ctx, (0.4, 0.38, 0.34), 0.95 * fig_a)
+        ctx.arc(48, -118, 2.4, 0, 2 * math.pi)
+        ctx.fill()
+        ember = 0.55 + 0.45 * math.sin(t * 7)
+        set_rgb(ctx, (1.0, 0.4, 0.05), ember * fig_a)
+        ctx.arc(47, -118, 2.3, 0, 2 * math.pi)
+        ctx.fill()
+        set_rgb(ctx, AMBER, 0.8 * ember * fig_a)
+        ctx.arc(46, -118, 1.1, 0, 2 * math.pi)
+        ctx.fill()
+
+        # Rising cigar smoke
+        for i in range(6):
+            sy = -128 - i * 16 - (t * 22 + i * 9) % 50
+            sx = 50 + math.sin(t * 1.4 + i * 1.1) * 10 + i * 2
+            set_rgb(ctx, SLATE, (0.28 - i * 0.035) * fig_a)
             ctx.save()
             ctx.translate(sx, sy)
-            ctx.scale(1.0 + i * 0.3, 1.4)
-            ctx.arc(0, 0, 5 + i * 1.5, 0, 2 * math.pi)
+            ctx.scale(1.1 + i * 0.35, 1.5)
+            ctx.arc(0, 0, 5 + i * 1.8, 0, 2 * math.pi)
             ctx.fill()
             ctx.restore()
-
-        if zoom_t < 0.4:
-            set_rgb(ctx, TUNGSTEN, 0.12 * fig_a)
-            ctx.arc(120, -5, 14, 0, 2 * math.pi)
-            ctx.fill()
 
         ctx.restore()
 
@@ -1737,90 +1779,312 @@ def draw_shards_cairo(ctx: cairo.Context, shards: List[dict]) -> None:
         ctx.restore()
 
 
+def draw_earth(ctx: cairo.Context, cx: float, cy: float, r: float, rot: float) -> None:
+    """Stylized Earth: oceans, continents, thin atmosphere."""
+    ocean = cairo.RadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.1, cx, cy, r)
+    ocean.add_color_stop_rgb(0, 0.35, 0.55, 0.75)
+    ocean.add_color_stop_rgb(0.55, 0.12, 0.28, 0.48)
+    ocean.add_color_stop_rgb(1, 0.04, 0.08, 0.16)
+    ctx.set_source(ocean)
+    ctx.arc(cx, cy, r, 0, 2 * math.pi)
+    ctx.fill()
+    # Continents
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(rot)
+    set_rgb(ctx, (0.25, 0.42, 0.22), 0.85)
+    for poly in (
+        [(-0.55, -0.2), (-0.15, -0.45), (0.1, -0.25), (-0.05, 0.05), (-0.4, 0.15)],
+        [(0.15, 0.05), (0.5, -0.1), (0.55, 0.25), (0.25, 0.4), (0.05, 0.25)],
+        [(-0.2, 0.35), (0.05, 0.5), (-0.25, 0.55), (-0.4, 0.4)],
+    ):
+        ctx.move_to(poly[0][0] * r, poly[0][1] * r)
+        for px, py in poly[1:]:
+            ctx.line_to(px * r, py * r)
+        ctx.close_path()
+        ctx.fill()
+    # Cloud wisps
+    set_rgb(ctx, COLD_WHITE, 0.22)
+    for i in range(5):
+        a = i * 1.1 + rot * 0.5
+        ctx.save()
+        ctx.rotate(a)
+        ctx.scale(1.0, 0.35)
+        ctx.arc(r * 0.35, 0, r * 0.18, 0, 2 * math.pi)
+        ctx.fill()
+        ctx.restore()
+    ctx.restore()
+    # Atmosphere rim
+    set_rgb(ctx, TUNGSTEN, 0.35)
+    ctx.set_line_width(2.5)
+    ctx.arc(cx, cy, r + 1.5, 0, 2 * math.pi)
+    ctx.stroke()
+    # Specular
+    set_rgb(ctx, COLD_WHITE, 0.2)
+    ctx.arc(cx - r * 0.35, cy - r * 0.4, r * 0.12, 0, 2 * math.pi)
+    ctx.fill()
+
+
+def draw_saturn(ctx: cairo.Context, cx: float, cy: float, r: float, rot: float) -> None:
+    """Saturn with tilted ring system."""
+    # Rings (behind planet half)
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(-0.35 + rot * 0.05)
+    ctx.scale(1.0, 0.32)
+    for i, (ri, ro, col, a) in enumerate([
+        (r * 1.25, r * 1.45, BRONZE, 0.45),
+        (r * 1.5, r * 1.85, (0.55, 0.48, 0.35), 0.55),
+        (r * 1.9, r * 2.15, STEEL, 0.35),
+    ]):
+        set_rgb(ctx, col, a)
+        ctx.arc(0, 0, ro, 0, 2 * math.pi)
+        ctx.fill()
+        set_rgb(ctx, CHARCOAL, 1)
+        ctx.arc(0, 0, ri, 0, 2 * math.pi)
+        ctx.fill()
+    ctx.restore()
+
+    # Planet body
+    body = cairo.RadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r)
+    body.add_color_stop_rgb(0, 0.85, 0.75, 0.55)
+    body.add_color_stop_rgb(0.5, 0.65, 0.5, 0.3)
+    body.add_color_stop_rgb(1, 0.25, 0.18, 0.1)
+    ctx.set_source(body)
+    ctx.arc(cx, cy, r, 0, 2 * math.pi)
+    ctx.fill()
+    # Bands
+    ctx.save()
+    ctx.translate(cx, cy)
+    for i, yy in enumerate((-0.35, -0.1, 0.15, 0.35)):
+        set_rgb(ctx, BRONZE if i % 2 == 0 else (0.5, 0.38, 0.22), 0.25)
+        ctx.rectangle(-r, yy * r - 3, r * 2, 6)
+        ctx.fill()
+    ctx.restore()
+
+    # Rings foreground half
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(-0.35 + rot * 0.05)
+    ctx.scale(1.0, 0.32)
+    ctx.rectangle(-r * 2.2, 0, r * 4.4, r * 2.2)
+    ctx.clip()
+    for ri, ro, col, a in [
+        (r * 1.25, r * 1.45, BRONZE, 0.55),
+        (r * 1.5, r * 1.85, (0.6, 0.52, 0.38), 0.65),
+        (r * 1.9, r * 2.15, STEEL, 0.4),
+    ]:
+        set_rgb(ctx, col, a)
+        ctx.arc(0, 0, ro, 0, 2 * math.pi)
+        ctx.fill()
+        set_rgb(ctx, CHARCOAL, 1)
+        ctx.arc(0, 0, ri, 0, 2 * math.pi)
+        ctx.fill()
+    ctx.restore()
+
+
+def draw_planets_orbit(ctx: cairo.Context, w: int, h: int, t: float, local_t: float) -> None:
+    """Earth and Saturn circling a shared barycenter in deep space."""
+    # Space backdrop
+    g = cairo.RadialGradient(w * 0.5, h * 0.45, 20, w * 0.5, h * 0.5, max(w, h) * 0.7)
+    g.add_color_stop_rgb(0, 0.06, 0.07, 0.12)
+    g.add_color_stop_rgb(1, 0.01, 0.01, 0.02)
+    ctx.set_source(g)
+    ctx.paint()
+    # Stars
+    rng = random.Random(7)
+    for i in range(90):
+        sx = rng.random() * w
+        sy = rng.random() * h
+        tw = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(t * 3 + i))
+        set_rgb(ctx, COLD_WHITE, 0.25 * tw)
+        ctx.arc(sx, sy, 0.8 + (i % 3) * 0.4, 0, 2 * math.pi)
+        ctx.fill()
+
+    cx, cy = w * 0.5, h * 0.48
+    # Orbital guide (faint)
+    set_rgb(ctx, STEEL, 0.12)
+    ctx.set_line_width(1)
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.scale(1.0, 0.55)
+    ctx.arc(0, 0, 220, 0, 2 * math.pi)
+    ctx.stroke()
+    ctx.arc(0, 0, 320, 0, 2 * math.pi)
+    ctx.stroke()
+    ctx.restore()
+
+    ang = local_t * 0.55
+    # Earth on inner orbit
+    ex = cx + math.cos(ang) * 210
+    ey = cy + math.sin(ang) * 115
+    # Saturn opposite-ish on outer orbit
+    sx = cx + math.cos(ang + math.pi * 0.85) * 310
+    sy = cy + math.sin(ang + math.pi * 0.85) * 165
+
+    # Draw farther planet first (simple depth by y)
+    if ey < sy:
+        draw_earth(ctx, ex, ey, 48, ang * 1.5)
+        draw_saturn(ctx, sx, sy, 62, ang)
+    else:
+        draw_saturn(ctx, sx, sy, 62, ang)
+        draw_earth(ctx, ex, ey, 48, ang * 1.5)
+
+    # Soft god-ray between them
+    set_rgb(ctx, TUNGSTEN, 0.06)
+    ctx.set_line_width(40)
+    ctx.move_to(ex, ey)
+    ctx.line_to(sx, sy)
+    ctx.stroke()
+
+
 def draw_strap_scene(
     ctx: cairo.Context, w: int, h: int, t: float, local_t: float, snap_t: float, fibers_left: int
 ) -> None:
-    """Worn sandal strap stretched to limit; fibers fray then snap."""
+    """Worn sandal strap stretched to limit; fibers fray prominently then snap."""
     g = cairo.LinearGradient(0, 0, 0, h)
     g.add_color_stop_rgb(0, 0.08, 0.07, 0.06)
     g.add_color_stop_rgb(1, 0.03, 0.03, 0.035)
     ctx.set_source(g)
     ctx.paint()
 
-    # Soft key light
     spot = cairo.RadialGradient(w * 0.5, h * 0.35, 20, w * 0.5, h * 0.45, 380)
-    spot.add_color_stop_rgba(0, BRONZE[0], BRONZE[1], BRONZE[2], 0.2)
+    spot.add_color_stop_rgba(0, BRONZE[0], BRONZE[1], BRONZE[2], 0.25)
     spot.add_color_stop_rgba(1, 0, 0, 0, 0)
     ctx.set_source(spot)
     ctx.paint()
 
     y = h * 0.5
-    left, right = 100, w - 100
-    stretch = 1.0 + 0.08 * math.sin(t * 3) + snap_t * 0.15
+    left, right = 80, w - 80
+    stretch = 1.0 + 0.1 * math.sin(t * 3.5) + snap_t * 0.22
+    mid_sag = 18 * stretch
+    cxm = w * 0.5
+    fray = smoothstep(0.0, 1.0, snap_t)
 
-    # Leather body
-    set_rgb(ctx, (0.28, 0.18, 0.10), 0.95)
-    ctx.set_line_width(18)
+    # Leather body — splits open as fray progresses
+    set_rgb(ctx, (0.32, 0.20, 0.11), 0.95)
+    ctx.set_line_width(28)
     ctx.set_line_cap(cairo.LINE_CAP_ROUND)
-    mid_sag = 12 * stretch
+    split = 8 + fray * 55
+    # Left half
     ctx.move_to(left, y)
-    ctx.curve_to(w * 0.35, y + mid_sag, w * 0.65, y + mid_sag, right, y)
+    ctx.curve_to(w * 0.28, y + mid_sag, cxm - split - 10, y + mid_sag * 1.1, cxm - split, y + mid_sag * 0.3)
+    ctx.stroke()
+    # Right half
+    ctx.move_to(cxm + split, y + mid_sag * 0.3)
+    ctx.curve_to(cxm + split + 10, y + mid_sag * 1.1, w * 0.72, y + mid_sag, right, y)
     ctx.stroke()
 
+    # Torn leather flaps at break
+    if fray > 0.15:
+        set_rgb(ctx, (0.4, 0.25, 0.12), 0.85)
+        for side, sign in ((cxm - split, -1), (cxm + split, 1)):
+            ctx.move_to(side, y + mid_sag * 0.2)
+            ctx.curve_to(
+                side + sign * 20, y + mid_sag * 0.2 - 25 * fray,
+                side + sign * 35, y - 10,
+                side + sign * 12, y + 8,
+            )
+            ctx.line_to(side, y + 14)
+            ctx.close_path()
+            ctx.fill()
+
     # Wear scratches
-    set_rgb(ctx, (0.15, 0.10, 0.06), 0.5)
-    ctx.set_line_width(1)
-    for i in range(8):
-        xx = left + 40 + i * 90
-        ctx.move_to(xx, y - 6 + mid_sag * 0.5)
-        ctx.line_to(xx + 30, y + 4 + mid_sag * 0.5)
+    set_rgb(ctx, (0.15, 0.10, 0.06), 0.55)
+    ctx.set_line_width(1.2)
+    for i in range(10):
+        xx = left + 30 + i * 85
+        if abs(xx - cxm) < split + 30:
+            continue
+        ctx.move_to(xx, y - 10 + mid_sag * 0.4)
+        ctx.line_to(xx + 40, y + 6 + mid_sag * 0.4)
         ctx.stroke()
 
-    # Vector fibers under tension
-    n_fibers = 12
+    # Prominent vector fibers (18) — thick, vibrating, fraying at center
+    n_fibers = 18
     for i in range(n_fibers):
         if i >= fibers_left:
+            # Show ghost of snapped fiber recoiling as dashed stump
             continue
-        fy = y - 8 + i * 1.5
-        tension_noise = math.sin(t * 25 + i) * (2 + snap_t * 6)
-        # Fray near center as snap approaches
-        fray = smoothstep(0.0, 1.0, snap_t)
-        gap = 20 * fray if i % 3 == 0 else 0
-        set_rgb(ctx, (0.55, 0.42, 0.28), 0.7)
-        ctx.set_line_width(1.0)
-        cxm = w * 0.5
-        ctx.move_to(left + 20, fy)
-        ctx.line_to(cxm - gap - 5, fy + tension_noise + mid_sag * 0.4)
-        if gap > 0:
-            # Broken gap — frayed ends
-            set_rgb(ctx, AMBER, 0.4)
-            ctx.move_to(cxm + gap + 5, fy + tension_noise + mid_sag * 0.4)
-            ctx.line_to(right - 20, fy)
-        else:
-            ctx.line_to(right - 20, fy)
+        fy = y - 14 + i * 1.7
+        tension = math.sin(t * 28 + i * 0.9) * (3 + snap_t * 10)
+        # Fibers break at staggered thresholds
+        break_threshold = (i + 1) / (n_fibers + 1)
+        this_fray = clamp((fray - break_threshold * 0.7) / 0.3)
+        gap = (12 + i * 2) * this_fray if this_fray > 0 else 0
+
+        # Glow under tension
+        set_rgb(ctx, AMBER, 0.15 + 0.25 * snap_t)
+        ctx.set_line_width(4.5)
+        ctx.move_to(left + 25, fy)
+        ctx.line_to(cxm - gap - 8, fy + tension + mid_sag * 0.35)
         ctx.stroke()
+
+        set_rgb(ctx, (0.7, 0.52, 0.32), 0.95)
+        ctx.set_line_width(2.4)
+        ctx.move_to(left + 25, fy)
+        ctx.line_to(cxm - gap - 8, fy + tension + mid_sag * 0.35)
+        ctx.stroke()
+
+        if gap > 0:
+            # Frayed curly ends
+            set_rgb(ctx, AMBER, 0.85)
+            ctx.set_line_width(2.0)
+            end_x = cxm - gap - 8
+            end_y = fy + tension + mid_sag * 0.35
+            ctx.move_to(end_x, end_y)
+            ctx.curve_to(end_x - 8, end_y - 10, end_x - 16, end_y + 6, end_x - 6, end_y + 12)
+            ctx.stroke()
+            # Sparks at break
+            set_rgb(ctx, COLD_WHITE, 0.7)
+            ctx.arc(end_x, end_y, 2.5, 0, 2 * math.pi)
+            ctx.fill()
+
+            set_rgb(ctx, (0.7, 0.52, 0.32), 0.95)
+            ctx.set_line_width(2.4)
+            ctx.move_to(cxm + gap + 8, fy + tension + mid_sag * 0.35)
+            ctx.line_to(right - 25, fy)
+            ctx.stroke()
+            set_rgb(ctx, AMBER, 0.85)
+            ctx.set_line_width(2.0)
+            end_x2 = cxm + gap + 8
+            ctx.move_to(end_x2, fy + tension + mid_sag * 0.35)
+            ctx.curve_to(end_x2 + 8, end_y - 12, end_x2 + 18, end_y + 4, end_x2 + 8, end_y + 14)
+            ctx.stroke()
+        else:
+            set_rgb(ctx, (0.7, 0.52, 0.32), 0.95)
+            ctx.set_line_width(2.4)
+            ctx.move_to(cxm - 8, fy + tension + mid_sag * 0.35)
+            ctx.line_to(right - 25, fy)
+            ctx.stroke()
+
+    # Macro inset label-ish: fiber count remaining as tick marks
+    set_rgb(ctx, STEEL, 0.4)
+    ctx.set_line_width(1)
+    for i in range(n_fibers):
+        tx = 40 + i * 8
+        alive = i < fibers_left
+        set_rgb(ctx, AMBER if alive else CHARCOAL, 0.8 if alive else 0.35)
+        ctx.rectangle(tx, h * 0.78, 5, 14 if alive else 6)
+        ctx.fill()
 
     # Metal buckle posts
     for px in (left, right):
-        set_rgb(ctx, STEEL, 0.9)
-        ctx.rectangle(px - 8, y - 24, 16, 48)
+        set_rgb(ctx, STEEL, 0.95)
+        ctx.rectangle(px - 12, y - 32, 24, 64)
         ctx.fill()
-        highlight = cairo.LinearGradient(px - 8, y - 24, px + 8, y + 24)
-        highlight.add_color_stop_rgba(0, 1, 1, 1, 0.35)
+        highlight = cairo.LinearGradient(px - 12, y - 32, px + 12, y + 32)
+        highlight.add_color_stop_rgba(0, 1, 1, 1, 0.4)
         highlight.add_color_stop_rgba(1, 0, 0, 0, 0)
         ctx.set_source(highlight)
-        ctx.rectangle(px - 8, y - 24, 16, 48)
+        ctx.rectangle(px - 12, y - 32, 24, 64)
         ctx.fill()
 
     if snap_t > 0.98:
-        # Empty space after snap — residual vibration marks
-        set_rgb(ctx, BLOOD, 0.15)
-        ctx.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-        # no text — just residual spring arcs
-        for i in range(6):
-            set_rgb(ctx, BRONZE, 0.25)
-            ctx.set_line_width(1.2)
-            ctx.arc(w * 0.35 + i * 40, y, 15 + i * 3, 0.2, math.pi - 0.2)
+        for i in range(8):
+            set_rgb(ctx, BRONZE, 0.3)
+            ctx.set_line_width(1.5)
+            ctx.arc(w * 0.3 + i * 50, y, 18 + i * 4, 0.15, math.pi - 0.15)
             ctx.stroke()
 
 
@@ -1837,7 +2101,8 @@ class Director:
         self._strap_snapped = False
         self._disintegrating = False
         self._gun_fired = False
-        self._fibers_left = 12
+        self._fibers_left = 18
+        self._fiber_total = 18
         coats = ["trench", "coat", "jacket", "raincoat", "overcoat"]
         hairs = ["short", "long", "buzz", "bun", "bald"]
         hats = ["none", "fedora", "cap", "beanie", "bowler", "none"]
@@ -1893,7 +2158,8 @@ class Director:
             self._strap_snapped = False
             self._disintegrating = False
             self._gun_fired = False
-            self._fibers_left = 12
+            self._fibers_left = 18
+            self._fiber_total = 18
             parts.shards.clear()
             parts.dust.clear()
             parts.fiber_bits.clear()
@@ -2056,46 +2322,44 @@ class Director:
         self.canvas.clear(CHARCOAL)
         fire_t = max(0.0, t - S3_FIRE) if t >= S3_FIRE else 0.0
 
-        if t < S3_FIRE + 0.15:
-            # Hold on barrel (with smoker) through zoom, fire at S3_FIRE
-            zoom_t = smoothstep(S3_BARREL_ZOOM - S2_END, S3_FIRE - S2_END, local)
-            # Keep enough frame to read the smoker + muzzle blast (don't bury flash in bore)
-            zoom_t = min(zoom_t, 0.48)
+        if t < S3_RAZOR:
+            # Wide / medium shot through the whole fire beat — no deep bore zoom
+            # Slight push-in only after the blast settles
+            if t < S3_FIRE:
+                zoom_t = smoothstep(S3_BARREL_ZOOM - S2_END, S3_FIRE - S2_END, local) * 0.15
+            else:
+                zoom_t = 0.0  # locked wide so muzzle flash is fully visible
             if t >= S3_FIRE and not self._gun_fired:
                 self._gun_fired = True
-                self.camera.impulse(22)
-                # Blast smoke into particle world
-                for _ in range(18):
+                self.camera.impulse(26)
+                for _ in range(22):
                     self.particles.spawn_smoke(
-                        WIDTH * 0.78 + random.uniform(-20, 40),
-                        HEIGHT * 0.52 + random.uniform(-30, 30),
+                        WIDTH * 0.78 + random.uniform(-20, 80),
+                        HEIGHT * 0.52 + random.uniform(-40, 40),
                     )
                     self.particles.dust.append(
                         DustMote(
-                            x=WIDTH * 0.8 + random.uniform(-30, 30),
-                            y=HEIGHT * 0.5 + random.uniform(-20, 20),
-                            vx=random.uniform(40, 160),
-                            vy=random.uniform(-60, 40),
-                            r=random.uniform(1.5, 4.0),
-                            life=random.uniform(0.8, 1.8),
-                            max_life=1.8,
-                            color=random.choice([AMBER, STEEL, SLATE]),
+                            x=WIDTH * 0.82 + random.uniform(-20, 50),
+                            y=HEIGHT * 0.5 + random.uniform(-30, 30),
+                            vx=random.uniform(60, 220),
+                            vy=random.uniform(-80, 50),
+                            r=random.uniform(1.5, 5.0),
+                            life=random.uniform(0.9, 2.0),
+                            max_life=2.0,
+                            color=random.choice([AMBER, STEEL, SLATE, COLD_WHITE]),
                         )
                     )
             draw_gun_pillow_scene(ctx, WIDTH, HEIGHT, t, local, zoom_t, fire_t=fire_t)
-        elif t < S3_RAZOR:
-            # Brief aftershock — pull back slightly so blast smoke reads
-            zoom_t = 0.55
-            draw_gun_pillow_scene(ctx, WIDTH, HEIGHT, t, local, zoom_t, fire_t=fire_t)
-            for _ in range(2):
-                self.particles.spawn_smoke(
-                    WIDTH * 0.82 + random.uniform(-10, 60),
-                    HEIGHT * 0.5 + random.uniform(-40, 20),
-                )
+            if t >= S3_FIRE:
+                for _ in range(2):
+                    self.particles.spawn_smoke(
+                        WIDTH * 0.85 + random.uniform(-10, 80),
+                        HEIGHT * 0.5 + random.uniform(-50, 30),
+                    )
         else:
             blend = smoothstep(S3_RAZOR, S3_RAZOR + 1.5, t)
             if blend < 1:
-                draw_gun_pillow_scene(ctx, WIDTH, HEIGHT, t, local, 1.0, fire_t=fire_t)
+                draw_gun_pillow_scene(ctx, WIDTH, HEIGHT, t, local, 0.05, fire_t=fire_t)
                 set_rgb(ctx, CHARCOAL, blend * 0.9)
                 ctx.paint()
             draw_razor_wire_scene(ctx, WIDTH, HEIGHT, t, t - S3_RAZOR)
@@ -2104,11 +2368,10 @@ class Director:
         local = t - S3_END
         self.canvas.clear((0.04, 0.04, 0.05))
 
-        if t < S4_STRAP:
-            # Bangle spotlight
+        if t < S4_PLANETS:
+            # Bangle spotlight + shatter
             set_rgb(ctx, CHARCOAL)
             ctx.paint()
-            # Ambient dark room
             spot = cairo.RadialGradient(WIDTH / 2, HEIGHT / 2, 20, WIDTH / 2, HEIGHT / 2, 400)
             spot.add_color_stop_rgba(0, 0.12, 0.13, 0.16, 1)
             spot.add_color_stop_rgba(1, 0.02, 0.02, 0.03, 1)
@@ -2125,13 +2388,11 @@ class Director:
                 for _ in range(42):
                     ang = random.uniform(0, 2 * math.pi)
                     rr = random.uniform(8, 70)
-                    # Bias toward impact at top-right
                     if random.random() < 0.4:
                         ang = random.uniform(-0.5, 0.8)
                         rr = random.uniform(5, 40)
                     seeds.append((cx + math.cos(ang) * rr, cy + math.sin(ang) * rr))
                 self.particles.shards = voronoi_shards(outline, seeds, (cx + 30, cy - 20))
-                # Boost outward speeds for readable slow-mo scatter
                 for sh in self.particles.shards:
                     sh["vx"] *= 1.35
                     sh["vy"] *= 1.35
@@ -2143,59 +2404,94 @@ class Director:
             draw_bangle(ctx, WIDTH / 2, HEIGHT / 2 - 20, rot, intact=intact)
             if self._bangle_shattered:
                 draw_shards_cairo(ctx, self.particles.shards)
-        else:
-            # Strap — drop glass debris from previous beat
+
+        elif t < S4_STRAP:
+            # Earth & Saturn circling after shatter
             self.particles.shards.clear()
-            snap_progress = smoothstep(S4_STRAP, S4_STRAP + 8.0, t)
-            # Fray fibers one by one
-            target_left = max(0, int(12 * (1.0 - snap_progress * 0.95)))
+            planet_local = t - S4_PLANETS
+            draw_planets_orbit(ctx, WIDTH, HEIGHT, t, planet_local)
+            # Crossfade hint from dark room
+            fade_in = 1.0 - smoothstep(0.0, 1.2, planet_local)
+            if fade_in > 0.02:
+                set_rgb(ctx, CHARCOAL, fade_in * 0.85)
+                ctx.paint()
+
+        else:
+            # Strap — prominent fiber-by-fiber fray then snap
+            self.particles.shards.clear()
+            snap_progress = smoothstep(S4_STRAP, S4_STRAP + 10.0, t)
+            # 18 fibers; peel them off steadily so fraying reads clearly
+            n_fibers = 18
+            target_left = max(0, int(n_fibers * (1.0 - snap_progress * 0.92)))
+            if not hasattr(self, "_fiber_total"):
+                self._fiber_total = n_fibers
+                self._fibers_left = n_fibers
             if target_left < self._fibers_left:
-                # Spawn recoiling fiber bits
                 for i in range(self._fibers_left - target_left):
+                    side = random.choice([-1, 1])
                     self.particles.fiber_bits.append(
                         {
-                            "x": WIDTH * 0.5 + random.uniform(-30, 30),
-                            "y": HEIGHT * 0.5,
-                            "vx": random.choice([-1, 1]) * random.uniform(120, 280),
-                            "vy": random.uniform(-80, -20),
-                            "spin": random.uniform(-10, 10),
+                            "x": WIDTH * 0.5 + random.uniform(-40, 40),
+                            "y": HEIGHT * 0.5 + random.uniform(-12, 12),
+                            "vx": side * random.uniform(180, 420),
+                            "vy": random.uniform(-160, -40),
+                            "spin": random.uniform(-14, 14),
                             "rot": 0,
-                            "life": random.uniform(0.8, 1.6),
-                            "len": random.uniform(20, 50),
+                            "life": random.uniform(1.2, 2.4),
+                            "len": random.uniform(35, 90),
                         }
                     )
+                    # Snap spark
+                    self.particles.dust.append(
+                        DustMote(
+                            x=WIDTH * 0.5 + random.uniform(-20, 20),
+                            y=HEIGHT * 0.5,
+                            vx=side * random.uniform(30, 90),
+                            vy=random.uniform(-40, 20),
+                            r=random.uniform(1.5, 3.5),
+                            life=0.5,
+                            max_life=0.5,
+                            color=AMBER,
+                        )
+                    )
                 self._fibers_left = target_left
+                self.camera.impulse(3 + (self._fibers_left == 0) * 8)
 
-            if t >= S4_STRAP + 10.0 and not self._strap_snapped:
+            if t >= S4_STRAP + 12.0 and not self._strap_snapped:
                 self._strap_snapped = True
                 self._fibers_left = 0
-                self.camera.impulse(16)
-                for _ in range(20):
+                self.camera.impulse(18)
+                for _ in range(28):
+                    side = random.choice([-1, 1])
                     self.particles.fiber_bits.append(
                         {
                             "x": WIDTH * 0.5,
-                            "y": HEIGHT * 0.5,
-                            "vx": random.choice([-1, 1]) * random.uniform(200, 420),
-                            "vy": random.uniform(-200, 40),
-                            "spin": random.uniform(-15, 15),
+                            "y": HEIGHT * 0.5 + random.uniform(-10, 10),
+                            "vx": side * random.uniform(250, 520),
+                            "vy": random.uniform(-280, 60),
+                            "spin": random.uniform(-18, 18),
                             "rot": 0,
-                            "life": random.uniform(1.0, 2.2),
-                            "len": random.uniform(30, 70),
+                            "life": random.uniform(1.4, 2.8),
+                            "len": random.uniform(40, 110),
                         }
                     )
 
             snap_t = 1.0 if self._strap_snapped else snap_progress
             draw_strap_scene(ctx, WIDTH, HEIGHT, t, local, snap_t, self._fibers_left)
 
-            # Draw recoiling fibers
             for f in self.particles.fiber_bits:
                 set_rgb(ctx, BRONZE, clamp(f["life"]))
-                ctx.set_line_width(1.5)
+                ctx.set_line_width(2.4)
                 ctx.save()
                 ctx.translate(f["x"], f["y"])
                 ctx.rotate(f["rot"])
                 ctx.move_to(-f["len"] * 0.5, 0)
                 ctx.line_to(f["len"] * 0.5, 0)
+                ctx.stroke()
+                # Frayed tip curl
+                set_rgb(ctx, AMBER, clamp(f["life"]) * 0.6)
+                ctx.set_line_width(1.2)
+                ctx.arc(f["len"] * 0.5, 0, 4, 0, math.pi)
                 ctx.stroke()
                 ctx.restore()
 
