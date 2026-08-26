@@ -43,6 +43,7 @@ S4_END = 258.0   # 4:18
 
 # Scene 3 / 4 sub-beats
 S3_BARREL_ZOOM = 140.0
+S3_FIRE = 156.0       # muzzle blast just before razor cut
 S3_RAZOR = 160.0
 S4_STRAP = 220.0
 S4_SHATTER = 198.0  # bangle shatter moment
@@ -691,94 +692,381 @@ def draw_hollow_silhouette(
     t: float,
     walk_phase: float,
     xray: float,
+    style: Optional[dict] = None,
 ) -> None:
-    """Anonymous commuter; xray reveals empty cavity + wireframe ribs."""
+    """Anonymous commuter with clothing/hair/hat variety; xray shows hollow cavity."""
+    style = style or {}
+    coat = style.get("coat", "coat")          # coat | trench | jacket | raincoat | overcoat
+    hair = style.get("hair", "short")         # short | long | buzz | bun | bald
+    hat = style.get("hat", "none")            # none | fedora | cap | beanie | bowler
+    build = style.get("build", "avg")         # slim | avg | heavy
+    bag = style.get("bag", False)
+    facing = style.get("facing", 1)           # 1 right, -1 left
+
+    width_mul = {"slim": 0.82, "avg": 1.0, "heavy": 1.22}.get(build, 1.0)
+    hem = {"trench": -48, "coat": -52, "jacket": -62, "raincoat": -50, "overcoat": -46}.get(coat, -52)
+    shoulder = 16 * width_mul
+    hip = (14 if coat != "jacket" else 12) * width_mul
+
     ctx.save()
     ctx.translate(x, ground_y)
-    ctx.scale(scale, scale)
+    ctx.scale(scale * facing, scale)
 
-    # Walk cycle
     stride = math.sin(walk_phase) * 0.35
     bob = abs(math.sin(walk_phase)) * 3
-
     ctx.translate(0, -bob)
 
-    # Legs
-    set_rgb(ctx, (0.02, 0.02, 0.03), 1.0 - 0.4 * xray)
-    ctx.set_line_width(7)
+    sil = (0.02, 0.02, 0.03)
+    sil_a = 0.98 - 0.25 * xray  # keep coat shapes readable during xray
+
+    # Legs / trousers (visible below coat hem)
+    set_rgb(ctx, sil, sil_a)
+    ctx.set_line_width(6.5 + (1.5 if build == "heavy" else 0))
     ctx.set_line_cap(cairo.LINE_CAP_ROUND)
-    ctx.move_to(-4, -55)
-    ctx.line_to(-8 - stride * 18, -5)
+    ctx.move_to(-5, hem + 4)
+    ctx.line_to(-9 - stride * 18, -4)
     ctx.stroke()
-    ctx.move_to(4, -55)
-    ctx.line_to(8 + stride * 18, -5)
+    ctx.move_to(5, hem + 4)
+    ctx.line_to(9 + stride * 18, -4)
+    ctx.stroke()
+    # Shoes
+    ctx.set_line_width(3.5)
+    ctx.move_to(-9 - stride * 18, -4)
+    ctx.line_to(-16 - stride * 18, -2)
+    ctx.stroke()
+    ctx.move_to(9 + stride * 18, -4)
+    ctx.line_to(18 + stride * 18, -2)
     ctx.stroke()
 
-    # Torso silhouette
-    set_rgb(ctx, (0.02, 0.025, 0.03), 0.95 - 0.55 * xray)
-    ctx.move_to(-16, -58)
-    ctx.curve_to(-18, -95, -12, -118, 0, -122)
-    ctx.curve_to(12, -118, 18, -95, 16, -58)
-    ctx.close_path()
-    ctx.fill()
+    # Coat / torso body — distinct silhouettes per garment
+    set_rgb(ctx, sil, sil_a)
+    if coat == "trench":
+        # Flared trench with belt notch
+        ctx.move_to(-shoulder - 4, -58)
+        ctx.curve_to(-shoulder - 6, -100, -12, -118, 0, -124)
+        ctx.curve_to(12, -118, shoulder + 6, -100, shoulder + 4, -58)
+        ctx.line_to(hip + 8, hem)
+        ctx.line_to(-hip - 8, hem)
+        ctx.close_path()
+        ctx.fill()
+        # Belt
+        set_rgb(ctx, sil, sil_a)
+        ctx.rectangle(-hip - 2, -72, (hip + 2) * 2, 5)
+        ctx.fill()
+        # Collar flaps
+        ctx.move_to(-10, -118)
+        ctx.line_to(-18, -108)
+        ctx.line_to(-6, -112)
+        ctx.fill()
+        ctx.move_to(10, -118)
+        ctx.line_to(18, -108)
+        ctx.line_to(6, -112)
+        ctx.fill()
+    elif coat == "raincoat":
+        ctx.move_to(-shoulder - 2, -60)
+        ctx.curve_to(-shoulder - 8, -95, -10, -120, 0, -124)
+        ctx.curve_to(10, -120, shoulder + 8, -95, shoulder + 2, -60)
+        ctx.line_to(hip + 10, hem)
+        ctx.curve_to(0, hem + 6, 0, hem + 6, -hip - 10, hem)
+        ctx.close_path()
+        ctx.fill()
+        # Hood bulge when no hat
+        if hat == "none":
+            set_rgb(ctx, sil, sil_a)
+            ctx.arc(0, -130, 18, math.pi, 2 * math.pi)
+            ctx.fill()
+    elif coat == "jacket":
+        ctx.move_to(-shoulder, -60)
+        ctx.curve_to(-shoulder - 2, -100, -10, -118, 0, -122)
+        ctx.curve_to(10, -118, shoulder + 2, -100, shoulder, -60)
+        ctx.line_to(hip, hem)
+        ctx.line_to(-hip, hem)
+        ctx.close_path()
+        ctx.fill()
+        # Open front slit
+        set_rgb(ctx, CHARCOAL, 0.5 * sil_a)
+        ctx.move_to(0, -110)
+        ctx.line_to(-3, hem)
+        ctx.line_to(3, hem)
+        ctx.close_path()
+        ctx.fill()
+    elif coat == "overcoat":
+        ctx.move_to(-shoulder - 6, -58)
+        ctx.curve_to(-shoulder - 8, -98, -12, -118, 0, -124)
+        ctx.curve_to(12, -118, shoulder + 8, -98, shoulder + 6, -58)
+        ctx.line_to(hip + 12, hem - 2)
+        ctx.line_to(-hip - 12, hem - 2)
+        ctx.close_path()
+        ctx.fill()
+    else:  # coat
+        ctx.move_to(-shoulder, -58)
+        ctx.curve_to(-shoulder - 4, -95, -12, -118, 0, -122)
+        ctx.curve_to(12, -118, shoulder + 4, -95, shoulder, -58)
+        ctx.line_to(hip + 4, hem)
+        ctx.line_to(-hip - 4, hem)
+        ctx.close_path()
+        ctx.fill()
 
     # Head
-    set_rgb(ctx, (0.02, 0.02, 0.03), 0.95 - 0.5 * xray)
-    ctx.arc(0, -138, 14, 0, 2 * math.pi)
+    set_rgb(ctx, sil, sil_a)
+    ctx.arc(0, -138, 13.5, 0, 2 * math.pi)
     ctx.fill()
 
     # Arms
-    set_rgb(ctx, (0.02, 0.02, 0.03), 0.9 - 0.4 * xray)
-    ctx.set_line_width(5)
-    ctx.move_to(-14, -100)
-    ctx.line_to(-22 - stride * 8, -70)
+    set_rgb(ctx, sil, sil_a * 0.95)
+    sleeve_w = 5.5 if coat != "jacket" else 4.5
+    ctx.set_line_width(sleeve_w)
+    arm_end = -68 if coat in ("trench", "overcoat", "raincoat") else -72
+    ctx.move_to(-shoulder + 2, -100)
+    ctx.line_to(-22 - stride * 8, arm_end)
     ctx.stroke()
-    ctx.move_to(14, -100)
-    ctx.line_to(20 + stride * 8, -72)
+    ctx.move_to(shoulder - 2, -100)
+    ctx.line_to(20 + stride * 8, arm_end - 2)
     ctx.stroke()
 
+    if bag:
+        set_rgb(ctx, sil, sil_a)
+        bx = 18 + stride * 6
+        ctx.rectangle(bx, -78, 14, 18)
+        ctx.fill()
+        ctx.set_line_width(1.5)
+        ctx.move_to(shoulder - 2, -100)
+        ctx.line_to(bx + 4, -78)
+        ctx.stroke()
+
     if xray > 0.05:
-        # Hollow cavity glow
         cav = cairo.RadialGradient(0, -95, 2, 0, -95, 28)
-        cav.add_color_stop_rgba(0, TUNGSTEN[0], TUNGSTEN[1], TUNGSTEN[2], 0.35 * xray)
-        cav.add_color_stop_rgba(0.6, BLOOD[0], BLOOD[1], BLOOD[2], 0.12 * xray)
+        cav.add_color_stop_rgba(0, TUNGSTEN[0], TUNGSTEN[1], TUNGSTEN[2], 0.28 * xray)
+        cav.add_color_stop_rgba(0.6, BLOOD[0], BLOOD[1], BLOOD[2], 0.10 * xray)
         cav.add_color_stop_rgba(1, 0, 0, 0, 0)
         ctx.set_source(cav)
         ctx.save()
         ctx.scale(1.0, 1.35)
-        ctx.arc(0, -95 / 1.35, 18, 0, 2 * math.pi)
+        ctx.arc(0, -95 / 1.35, 16, 0, 2 * math.pi)
         ctx.fill()
         ctx.restore()
-
-        # Empty head cavity
-        set_rgb(ctx, TUNGSTEN, 0.25 * xray)
-        ctx.arc(0, -138, 9, 0, 2 * math.pi)
-        ctx.fill()
-        set_rgb(ctx, CHARCOAL, 0.8 * xray)
-        ctx.arc(0, -138, 6, 0, 2 * math.pi)
-        ctx.fill()
-
-        # Wireframe ribcage
-        set_rgb(ctx, COLD_WHITE, 0.55 * xray)
+        set_rgb(ctx, COLD_WHITE, 0.45 * xray)
         ctx.set_line_width(0.9)
         for i in range(6):
             yy = -108 + i * 7
-            spread = 10 + i * 0.8
+            spread = 9 + i * 0.7
             ctx.move_to(-spread, yy)
             ctx.curve_to(-spread * 0.3, yy - 4, spread * 0.3, yy - 4, spread, yy)
             ctx.stroke()
-        # Sternum
-        ctx.move_to(0, -112)
-        ctx.line_to(0, -72)
-        ctx.stroke()
-        # Spine glow
-        set_rgb(ctx, AMBER, 0.35 * xray)
-        ctx.set_line_width(1.2)
-        ctx.move_to(0, -120)
-        ctx.line_to(0, -60)
+        set_rgb(ctx, AMBER, 0.3 * xray)
+        ctx.set_line_width(1.1)
+        ctx.move_to(0, -118)
+        ctx.line_to(0, -65)
         ctx.stroke()
 
+    # Hats & hair drawn AFTER xray so silhouette variety always reads
+    set_rgb(ctx, sil, min(1.0, sil_a + 0.15))
+    if hair == "long":
+        ctx.move_to(-14, -142)
+        ctx.curve_to(-22, -128, -20, -100, -16, -88)
+        ctx.line_to(-8, -90)
+        ctx.curve_to(-12, -110, -10, -132, -4, -140)
+        ctx.fill()
+        ctx.move_to(14, -142)
+        ctx.curve_to(22, -128, 20, -100, 16, -88)
+        ctx.line_to(8, -90)
+        ctx.curve_to(12, -110, 10, -132, 4, -140)
+        ctx.fill()
+        ctx.move_to(-12, -148)
+        ctx.curve_to(-6, -115, 6, -115, 12, -148)
+        ctx.close_path()
+        ctx.fill()
+    elif hair == "bun":
+        ctx.arc(-2, -154, 8, 0, 2 * math.pi)
+        ctx.fill()
+        ctx.arc(0, -146, 13, math.pi, 2 * math.pi)
+        ctx.fill()
+    elif hair == "buzz":
+        ctx.arc(0, -138, 15.5, math.pi * 1.02, math.pi * 1.98)
+        ctx.fill()
+    elif hair == "short":
+        ctx.move_to(-14, -140)
+        ctx.curve_to(-12, -155, 12, -155, 14, -140)
+        ctx.line_to(12, -135)
+        ctx.curve_to(8, -148, -8, -148, -12, -135)
+        ctx.close_path()
+        ctx.fill()
+
+    if hat == "fedora":
+        set_rgb(ctx, sil, 1.0)
+        ctx.rectangle(-20, -150, 40, 5)
+        ctx.fill()
+        ctx.move_to(-13, -150)
+        ctx.curve_to(-11, -168, 11, -168, 13, -150)
+        ctx.close_path()
+        ctx.fill()
+        set_rgb(ctx, BRONZE, 0.35)
+        ctx.rectangle(-18, -149, 36, 2)
+        ctx.fill()
+    elif hat == "cap":
+        set_rgb(ctx, sil, 1.0)
+        ctx.arc(0, -144, 15, math.pi, 2 * math.pi)
+        ctx.fill()
+        ctx.move_to(4, -144)
+        ctx.line_to(26, -138)
+        ctx.line_to(10, -148)
+        ctx.close_path()
+        ctx.fill()
+    elif hat == "beanie":
+        set_rgb(ctx, sil, 1.0)
+        ctx.arc(0, -144, 16, math.pi, 2 * math.pi)
+        ctx.fill()
+        ctx.rectangle(-16, -146, 32, 10)
+        ctx.fill()
+        ctx.arc(0, -162, 4, 0, 2 * math.pi)
+        ctx.fill()
+    elif hat == "bowler":
+        set_rgb(ctx, sil, 1.0)
+        ctx.rectangle(-18, -148, 36, 4)
+        ctx.fill()
+        ctx.arc(0, -148, 14, math.pi, 2 * math.pi)
+        ctx.fill()
+
     ctx.restore()
+
+
+def draw_airplane(
+    ctx: cairo.Context, x: float, y: float, scale: float, heading: float, bank: float = 0.0
+) -> None:
+    """Noir metallic airliner / bomber with cockpit glass and engine nacelles."""
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(heading)
+    ctx.scale(scale, scale * (1.0 - abs(bank) * 0.12))
+
+    # Soft under-shadow
+    set_rgb(ctx, (0, 0, 0), 0.25)
+    ctx.save()
+    ctx.translate(0, 10)
+    ctx.scale(1.0, 0.25)
+    ctx.arc(0, 0, 50, 0, 2 * math.pi)
+    ctx.fill()
+    ctx.restore()
+
+    # Main wing (drawn under fuselage)
+    wing = cairo.LinearGradient(0, -40, 0, 40)
+    wing.add_color_stop_rgb(0, 0.42, 0.45, 0.48)
+    wing.add_color_stop_rgb(0.5, 0.22, 0.24, 0.26)
+    wing.add_color_stop_rgb(1, 0.42, 0.45, 0.48)
+    ctx.set_source(wing)
+    ctx.move_to(-8, 0)
+    ctx.line_to(-35, -38 - bank * 10)
+    ctx.line_to(8, -32 - bank * 8)
+    ctx.line_to(22, -2)
+    ctx.line_to(8, 32 + bank * 8)
+    ctx.line_to(-35, 38 + bank * 10)
+    ctx.close_path()
+    ctx.fill()
+    # Wing edge light
+    set_rgb(ctx, COLD_WHITE, 0.35)
+    ctx.set_line_width(1.2)
+    ctx.move_to(-30, -36 - bank * 10)
+    ctx.line_to(6, -30 - bank * 8)
+    ctx.stroke()
+
+    # Engine nacelles
+    for ey in (-18, 18):
+        nac = cairo.LinearGradient(-5, ey - 5, -5, ey + 5)
+        nac.add_color_stop_rgb(0, 0.5, 0.52, 0.55)
+        nac.add_color_stop_rgb(1, 0.15, 0.16, 0.18)
+        ctx.set_source(nac)
+        ctx.rectangle(-18, ey - 4, 28, 8)
+        ctx.fill()
+        set_rgb(ctx, CHARCOAL, 0.9)
+        ctx.arc(-18, ey, 3.5, 0, 2 * math.pi)
+        ctx.fill()
+        # Exhaust glow
+        set_rgb(ctx, AMBER, 0.35)
+        ctx.arc(10, ey, 2, 0, 2 * math.pi)
+        ctx.fill()
+
+    # Fuselage
+    fus = cairo.LinearGradient(0, -8, 0, 8)
+    fus.add_color_stop_rgb(0, 0.55, 0.58, 0.62)
+    fus.add_color_stop_rgb(0.4, 0.72, 0.74, 0.76)
+    fus.add_color_stop_rgb(0.7, 0.35, 0.37, 0.40)
+    fus.add_color_stop_rgb(1, 0.12, 0.13, 0.15)
+    ctx.set_source(fus)
+    ctx.move_to(-62, 0)
+    ctx.curve_to(-50, -9, 10, -10, 48, -4)
+    ctx.curve_to(62, -2, 64, 0, 58, 2)
+    ctx.curve_to(48, 5, 10, 10, -50, 9)
+    ctx.curve_to(-58, 5, -62, 2, -62, 0)
+    ctx.close_path()
+    ctx.fill()
+
+    # Windows row
+    set_rgb(ctx, TUNGSTEN, 0.55)
+    for i in range(8):
+        ctx.rectangle(-20 + i * 7, -3.5, 4, 2.5)
+        ctx.fill()
+
+    # Cockpit glass
+    glass = cairo.LinearGradient(45, -4, 58, 2)
+    glass.add_color_stop_rgba(0, TUNGSTEN[0], TUNGSTEN[1], TUNGSTEN[2], 0.75)
+    glass.add_color_stop_rgba(1, 0.1, 0.15, 0.2, 0.5)
+    ctx.set_source(glass)
+    ctx.move_to(40, -3)
+    ctx.curve_to(50, -5, 58, -2, 60, 0)
+    ctx.line_to(52, 2)
+    ctx.curve_to(48, 1, 42, 0, 40, 0)
+    ctx.close_path()
+    ctx.fill()
+
+    # Tail fin
+    set_rgb(ctx, (0.3, 0.32, 0.35), 0.95)
+    ctx.move_to(-52, 0)
+    ctx.line_to(-66, -20)
+    ctx.line_to(-48, -3)
+    ctx.close_path()
+    ctx.fill()
+    ctx.move_to(-54, 0)
+    ctx.line_to(-62, 12)
+    ctx.line_to(-48, 2)
+    ctx.close_path()
+    ctx.fill()
+
+    # Nav lights
+    set_rgb(ctx, BLOOD, 0.85)
+    ctx.arc(-32, -36 - bank * 10, 2.2, 0, 2 * math.pi)
+    ctx.fill()
+    set_rgb(ctx, (0.15, 0.75, 0.35), 0.85)
+    ctx.arc(-32, 36 + bank * 10, 2.2, 0, 2 * math.pi)
+    ctx.fill()
+    set_rgb(ctx, COLD_WHITE, 0.7)
+    ctx.arc(58, 0, 1.8, 0, 2 * math.pi)
+    ctx.fill()
+    ctx.restore()
+
+
+def draw_plane_trail(ctx: cairo.Context, trail: Sequence[Tuple[float, float, float]]) -> None:
+    """Thick fading exhaust / contrail ribbon."""
+    if len(trail) < 2:
+        return
+    for i in range(1, len(trail)):
+        x0, y0, a0 = trail[i - 1]
+        x1, y1, a1 = trail[i]
+        wline = 3.0 + 10.0 * (1.0 - a1)
+        set_rgb(ctx, COLD_WHITE, 0.18 * a1)
+        ctx.set_line_width(wline)
+        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+        ctx.move_to(x0, y0)
+        ctx.line_to(x1, y1)
+        ctx.stroke()
+        set_rgb(ctx, SLATE, 0.14 * a1)
+        ctx.set_line_width(wline * 1.6)
+        ctx.move_to(x0, y0 + 2)
+        ctx.line_to(x1, y1 + 2)
+        ctx.stroke()
+        if i % 2 == 0:
+            set_rgb(ctx, (0.45, 0.48, 0.52), 0.12 * a1)
+            ctx.arc(x1, y1, 4 + 8 * (1 - a1), 0, 2 * math.pi)
+            ctx.fill()
 
 
 def draw_atom_loom(ctx: cairo.Context, w: int, h: int, t: float, local_t: float) -> None:
@@ -894,19 +1182,45 @@ def draw_atom_loom(ctx: cairo.Context, w: int, h: int, t: float, local_t: float)
         ctx.line_to(cx + 8, cy + d)
         ctx.stroke()
 
+    # Extra variety: orbital tick marks, danger chevrons
+    set_rgb(ctx, BRONZE, 0.4)
+    ctx.set_line_width(1.0)
+    for i in range(12):
+        ang = i * math.pi / 6 + t * 0.05
+        r0, r1 = 240, 255
+        ctx.move_to(cx + math.cos(ang) * r0, cy + math.sin(ang) * r0)
+        ctx.line_to(cx + math.cos(ang) * r1, cy + math.sin(ang) * r1)
+        ctx.stroke()
+    threat2 = smoothstep(30.0, 55.0, local_t)
+    if threat2 > 0.05:
+        set_rgb(ctx, BLOOD, 0.35 * threat2 * pulse)
+        for k in range(4):
+            ang = t * 1.5 + k * math.pi / 2
+            px = cx + math.cos(ang) * (40 + threat2 * 30)
+            py = cy + math.sin(ang) * (40 + threat2 * 30)
+            ctx.move_to(px, py)
+            ctx.line_to(px + math.cos(ang + 2.5) * 12, py + math.sin(ang + 2.5) * 12)
+            ctx.line_to(px + math.cos(ang - 2.5) * 12, py + math.sin(ang - 2.5) * 12)
+            ctx.close_path()
+            ctx.fill()
+
 
 def draw_gun_pillow_scene(
-    ctx: cairo.Context, w: int, h: int, t: float, local_t: float, zoom_t: float
+    ctx: cairo.Context,
+    w: int,
+    h: int,
+    t: float,
+    local_t: float,
+    zoom_t: float,
+    fire_t: float = 0.0,
 ) -> None:
-    """Solitary figure resting on giant rifled gun barrel."""
-    # Dark room
+    """Solitary figure resting on giant rifled gun barrel, smoking a cigar; optional muzzle blast."""
     g = cairo.LinearGradient(0, 0, 0, h)
     g.add_color_stop_rgb(0, 0.04, 0.045, 0.06)
     g.add_color_stop_rgb(1, 0.02, 0.02, 0.025)
     ctx.set_source(g)
     ctx.paint()
 
-    # Window cold light strip
     win = cairo.LinearGradient(0, 80, w, 200)
     win.add_color_stop_rgba(0, TUNGSTEN[0], TUNGSTEN[1], TUNGSTEN[2], 0.0)
     win.add_color_stop_rgba(0.4, TUNGSTEN[0], TUNGSTEN[1], TUNGSTEN[2], 0.12)
@@ -915,7 +1229,11 @@ def draw_gun_pillow_scene(
     ctx.rectangle(0, 60, w, 140)
     ctx.fill()
 
-    # Zoom into barrel
+    if fire_t > 0:
+        flash = clamp(1.0 - fire_t * 2.2)
+        set_rgb(ctx, (1.0, 0.75, 0.35), 0.55 * flash)
+        ctx.paint()
+
     z = 1.0 + zoom_t * 3.8
     ctx.save()
     cx, cy = w * 0.55, h * 0.55
@@ -923,7 +1241,6 @@ def draw_gun_pillow_scene(
     ctx.scale(z, z)
     ctx.translate(-cx, -cy)
 
-    # Barrel body protruding from wall
     bx0, by0 = -80, h * 0.48
     bw, bh = w * 0.85, 95
     barrel = cairo.LinearGradient(bx0, by0, bx0, by0 + bh)
@@ -933,18 +1250,21 @@ def draw_gun_pillow_scene(
     barrel.add_color_stop_rgb(0.65, 0.35, 0.37, 0.40)
     barrel.add_color_stop_rgb(1, 0.10, 0.11, 0.12)
     ctx.set_source(barrel)
-    # Rounded tube
     ctx.rectangle(bx0, by0, bw, bh)
     ctx.fill()
-    # Specular highlight strip
     set_rgb(ctx, COLD_WHITE, 0.35)
     ctx.rectangle(bx0, by0 + 18, bw, 6)
     ctx.fill()
     set_rgb(ctx, CHARCOAL, 0.5)
     ctx.rectangle(bx0, by0 + bh - 22, bw, 10)
     ctx.fill()
+    set_rgb(ctx, (0.08, 0.08, 0.09), 1)
+    ctx.move_to(bx0 + bw - 70, by0)
+    ctx.line_to(bx0 + bw - 62, by0 - 18)
+    ctx.line_to(bx0 + bw - 54, by0)
+    ctx.close_path()
+    ctx.fill()
 
-    # Muzzle face (ellipse) with rifling spiral
     mx, my = bx0 + bw - 10, by0 + bh * 0.5
     face = cairo.RadialGradient(mx - 10, my - 8, 5, mx, my, 55)
     face.add_color_stop_rgb(0, 0.25, 0.26, 0.28)
@@ -958,11 +1278,10 @@ def draw_gun_pillow_scene(
     ctx.fill()
     ctx.restore()
 
-    # Rifling grooves — hypnotic spiral into void
-    set_rgb(ctx, (0.01, 0.01, 0.015), 1)
     ctx.save()
     ctx.translate(mx, my)
     ctx.scale(0.55, 1.0)
+    set_rgb(ctx, (0.01, 0.01, 0.015), 1)
     ctx.arc(0, 0, 22, 0, 2 * math.pi)
     ctx.fill()
     for groove in range(8):
@@ -979,7 +1298,6 @@ def draw_gun_pillow_scene(
             else:
                 ctx.line_to(px, py)
         ctx.stroke()
-    # Absolute black void
     void = cairo.RadialGradient(0, 0, 0, 0, 0, 18)
     void.add_color_stop_rgb(0, 0, 0, 0)
     void.add_color_stop_rgb(1, 0.02, 0.02, 0.03)
@@ -988,55 +1306,177 @@ def draw_gun_pillow_scene(
     ctx.fill()
     ctx.restore()
 
-    # Figure resting head on muzzle (fade out as we zoom deep)
-    fig_a = 1.0 - smoothstep(0.25, 0.75, zoom_t)
+    if 0 < fire_t < 1.8:
+        flash = clamp(1.0 - fire_t * 1.8)
+        ctx.save()
+        ctx.translate(mx + 30, my)
+        for k in range(7):
+            ang = -0.6 + k * 0.2
+            length = (40 + k * 8) * flash
+            flame = cairo.LinearGradient(0, 0, math.cos(ang) * length, math.sin(ang) * length)
+            flame.add_color_stop_rgba(0, 1, 0.95, 0.7, 0.95 * flash)
+            flame.add_color_stop_rgba(0.4, 1, 0.45, 0.1, 0.7 * flash)
+            flame.add_color_stop_rgba(1, 0.4, 0.05, 0.0, 0)
+            ctx.set_source(flame)
+            ctx.move_to(0, -4)
+            ctx.line_to(math.cos(ang) * length, math.sin(ang) * length)
+            ctx.line_to(0, 4)
+            ctx.close_path()
+            ctx.fill()
+        blast = cairo.RadialGradient(20, 0, 2, 40, 0, 90)
+        blast.add_color_stop_rgba(0, 1, 0.9, 0.5, 0.8 * flash)
+        blast.add_color_stop_rgba(0.3, 0.9, 0.3, 0.05, 0.35 * flash)
+        blast.add_color_stop_rgba(1, 0.2, 0.2, 0.2, 0)
+        ctx.set_source(blast)
+        ctx.arc(30, 0, 90, 0, 2 * math.pi)
+        ctx.fill()
+        ctx.restore()
+        for i in range(5):
+            age = fire_t - i * 0.12
+            if age < 0:
+                continue
+            rr = 30 + age * 120
+            set_rgb(ctx, SLATE, max(0, 0.35 - age * 0.18))
+            ctx.set_line_width(max(0.5, 8 - age * 3))
+            ctx.save()
+            ctx.translate(mx + 40 + age * 80, my - age * 20)
+            ctx.scale(1.6, 0.7)
+            ctx.arc(0, 0, rr, 0, 2 * math.pi)
+            ctx.stroke()
+            ctx.restore()
+
+    fig_a = 1.0 - smoothstep(0.3, 0.85, zoom_t)
     if fig_a > 0.02:
         ctx.save()
-        ctx.translate(mx - 160, by0 + 8)
-        ctx.rotate(-0.08)
-        # Rim light so silhouette reads against steel
-        set_rgb(ctx, AMBER, 0.22 * fig_a)
-        ctx.set_line_width(10)
+        ctx.translate(mx - 200, by0 + 20)
+        ctx.rotate(-0.1)
+
+        set_rgb(ctx, (0.0, 0.0, 0.0), 0.45 * fig_a)
+        ctx.save()
+        ctx.scale(1.0, 0.35)
+        ctx.arc(40, 40, 120, 0, 2 * math.pi)
+        ctx.fill()
+        ctx.restore()
+
+        set_rgb(ctx, (0.04, 0.04, 0.05), 0.98 * fig_a)
+        ctx.set_line_width(14)
         ctx.set_line_cap(cairo.LINE_CAP_ROUND)
-        ctx.move_to(-40, 0)
-        ctx.curve_to(20, -36, 90, -40, 145, -18)
+        ctx.move_to(-30, 18)
+        ctx.curve_to(-70, 30, -110, 10, -130, -5)
         ctx.stroke()
-        # Reclining torso
-        set_rgb(ctx, (0.01, 0.01, 0.015), 0.98 * fig_a)
-        ctx.move_to(-50, 6)
-        ctx.curve_to(10, -34, 90, -38, 150, -14)
-        ctx.curve_to(155, 8, 40, 32, -45, 28)
+        ctx.move_to(-30, 22)
+        ctx.curve_to(-60, 45, -90, 50, -100, 35)
+        ctx.stroke()
+        ctx.set_line_width(8)
+        ctx.move_to(-130, -5)
+        ctx.line_to(-145, -8)
+        ctx.stroke()
+
+        set_rgb(ctx, (0.05, 0.05, 0.06), 0.98 * fig_a)
+        ctx.move_to(-40, 5)
+        ctx.curve_to(-10, 28, 40, 30, 70, 12)
+        ctx.curve_to(50, 40, -20, 42, -45, 22)
         ctx.close_path()
         ctx.fill()
-        # Head on muzzle
-        set_rgb(ctx, (0.01, 0.01, 0.015), 0.98 * fig_a)
-        ctx.arc(155, -20, 28, 0, 2 * math.pi)
+
+        set_rgb(ctx, (0.06, 0.055, 0.05), 0.98 * fig_a)
+        ctx.move_to(50, 8)
+        ctx.curve_to(90, -25, 140, -35, 175, -18)
+        ctx.curve_to(180, 5, 100, 35, 55, 28)
+        ctx.close_path()
         ctx.fill()
-        set_rgb(ctx, AMBER, 0.35 * fig_a)
-        ctx.set_line_width(1.5)
-        ctx.arc(155, -20, 28, 0, 2 * math.pi)
+        set_rgb(ctx, (0.12, 0.10, 0.09), 0.7 * fig_a)
+        ctx.move_to(90, -5)
+        ctx.line_to(150, -12)
+        ctx.line_to(145, 8)
+        ctx.line_to(85, 12)
+        ctx.close_path()
+        ctx.fill()
+
+        set_rgb(ctx, (0.07, 0.06, 0.055), 0.98 * fig_a)
+        ctx.set_line_width(11)
+        ctx.move_to(100, 0)
+        ctx.curve_to(130, -15, 160, -28, 185, -22)
         ctx.stroke()
-        # Hollow cranial cavity
-        cav = cairo.RadialGradient(155, -20, 2, 155, -20, 18)
-        cav.add_color_stop_rgba(0, TUNGSTEN[0], TUNGSTEN[1], TUNGSTEN[2], 0.55 * fig_a)
-        cav.add_color_stop_rgba(1, 0, 0, 0, 0)
-        ctx.set_source(cav)
-        ctx.arc(155, -20, 16, 0, 2 * math.pi)
+        ctx.arc(188, -22, 7, 0, 2 * math.pi)
         ctx.fill()
-        set_rgb(ctx, CHARCOAL, 0.9 * fig_a)
-        ctx.arc(155, -20, 9, 0, 2 * math.pi)
-        ctx.fill()
-        # Arm draped along barrel
-        set_rgb(ctx, (0.01, 0.01, 0.015), 0.95 * fig_a)
-        ctx.set_line_width(9)
-        ctx.move_to(70, 4)
-        ctx.curve_to(20, 28, -40, 34, -90, 16)
+
+        ctx.set_line_width(10)
+        ctx.move_to(80, 15)
+        ctx.curve_to(40, 35, -10, 40, -50, 25)
         ctx.stroke()
+
+        set_rgb(ctx, (0.08, 0.07, 0.065), 0.98 * fig_a)
+        ctx.set_line_width(12)
+        ctx.move_to(165, -15)
+        ctx.line_to(195, -28)
+        ctx.stroke()
+        head = cairo.RadialGradient(205, -38, 4, 210, -32, 30)
+        head.add_color_stop_rgb(0, 0.18, 0.15, 0.13)
+        head.add_color_stop_rgb(1, 0.04, 0.035, 0.03)
+        ctx.set_source(head)
+        ctx.save()
+        ctx.translate(210, -34)
+        ctx.scale(1.15, 1.0)
+        ctx.arc(0, 0, 26, 0, 2 * math.pi)
+        ctx.fill()
+        ctx.restore()
+        set_rgb(ctx, (0.12, 0.10, 0.09), 0.8 * fig_a)
+        ctx.set_line_width(2)
+        ctx.move_to(228, -34)
+        ctx.line_to(238, -30)
+        ctx.stroke()
+        ctx.move_to(218, -38)
+        ctx.curve_to(224, -40, 230, -39, 234, -36)
+        ctx.stroke()
+        set_rgb(ctx, (0.02, 0.02, 0.025), 0.95 * fig_a)
+        ctx.move_to(190, -45)
+        ctx.curve_to(200, -62, 230, -60, 235, -40)
+        ctx.line_to(220, -42)
+        ctx.close_path()
+        ctx.fill()
+        set_rgb(ctx, (0.1, 0.08, 0.07), 0.9 * fig_a)
+        ctx.arc(198, -32, 5, 0, 2 * math.pi)
+        ctx.fill()
+
+        cigar_x, cigar_y = 240, -28
+        set_rgb(ctx, BRONZE, 0.95 * fig_a)
+        ctx.set_line_width(4.5)
+        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+        ctx.move_to(232, -30)
+        ctx.line_to(258, -26)
+        ctx.stroke()
+        set_rgb(ctx, (0.35, 0.35, 0.32), 0.9 * fig_a)
+        ctx.arc(258, -26, 2.5, 0, 2 * math.pi)
+        ctx.fill()
+        ember = 0.6 + 0.4 * math.sin(t * 8)
+        set_rgb(ctx, (1.0, 0.35, 0.05), ember * fig_a)
+        ctx.arc(256, -26, 2.2, 0, 2 * math.pi)
+        ctx.fill()
+        set_rgb(ctx, AMBER, 0.7 * ember * fig_a)
+        ctx.arc(255, -26, 1.2, 0, 2 * math.pi)
+        ctx.fill()
+
+        for i in range(5):
+            sy = cigar_y - 8 - i * 14 - (t * 18 + i * 7) % 40
+            sx = cigar_x + 16 + math.sin(t * 1.5 + i) * 8 + i * 3
+            set_rgb(ctx, SLATE, (0.22 - i * 0.03) * fig_a)
+            ctx.save()
+            ctx.translate(sx, sy)
+            ctx.scale(1.0 + i * 0.3, 1.4)
+            ctx.arc(0, 0, 5 + i * 1.5, 0, 2 * math.pi)
+            ctx.fill()
+            ctx.restore()
+
+        if zoom_t < 0.4:
+            set_rgb(ctx, TUNGSTEN, 0.12 * fig_a)
+            ctx.arc(120, -5, 14, 0, 2 * math.pi)
+            ctx.fill()
+
         ctx.restore()
 
     ctx.restore()
 
-    # Dust motes in light beam
     set_rgb(ctx, COLD_WHITE, 0.15)
     for i in range(20):
         px = (math.sin(t * 0.3 + i * 1.7) * 0.5 + 0.5) * w
@@ -1046,123 +1486,166 @@ def draw_gun_pillow_scene(
 
 
 def draw_razor_wire_scene(ctx: cairo.Context, w: int, h: int, t: float, local_t: float) -> None:
-    """Macro blade edge + tensed wire with tiny silhouette."""
+    """Unmistakable straight-razor macro: handle, spine, cutting edge + wire walker below."""
     g = cairo.LinearGradient(0, 0, 0, h)
-    g.add_color_stop_rgb(0, 0.12, 0.16, 0.22)
-    g.add_color_stop_rgb(0.45, 0.06, 0.07, 0.09)
-    g.add_color_stop_rgb(1, 0.03, 0.03, 0.04)
+    g.add_color_stop_rgb(0, 0.18, 0.22, 0.28)
+    g.add_color_stop_rgb(0.35, 0.08, 0.09, 0.11)
+    g.add_color_stop_rgb(1, 0.02, 0.02, 0.03)
     ctx.set_source(g)
     ctx.paint()
 
-    # Blade — extreme macro horizontal gleam (dominates upper half)
-    blade_y = h * 0.34
-    blade = cairo.LinearGradient(0, blade_y - 30, 0, blade_y + 110)
-    blade.add_color_stop_rgb(0, 0.22, 0.24, 0.27)
-    blade.add_color_stop_rgb(0.28, 0.62, 0.66, 0.70)
-    blade.add_color_stop_rgb(0.42, 0.95, 0.96, 0.97)
-    blade.add_color_stop_rgb(0.48, 0.75, 0.78, 0.82)
-    blade.add_color_stop_rgb(0.62, 0.32, 0.34, 0.38)
-    blade.add_color_stop_rgb(1, 0.06, 0.06, 0.07)
+    blade_y = h * 0.32
+    ctx.save()
+    ctx.translate(40, blade_y + 30)
+    ctx.rotate(-0.08)
+    handle = cairo.LinearGradient(0, -25, 0, 25)
+    handle.add_color_stop_rgb(0, 0.25, 0.14, 0.08)
+    handle.add_color_stop_rgb(0.5, 0.45, 0.28, 0.14)
+    handle.add_color_stop_rgb(1, 0.12, 0.07, 0.04)
+    ctx.set_source(handle)
+    ctx.rectangle(0, -22, 160, 44)
+    ctx.fill()
+    set_rgb(ctx, STEEL, 0.9)
+    ctx.arc(150, 0, 6, 0, 2 * math.pi)
+    ctx.fill()
+    set_rgb(ctx, CHARCOAL, 1)
+    ctx.arc(150, 0, 2.5, 0, 2 * math.pi)
+    ctx.fill()
+    set_rgb(ctx, BRONZE, 0.4)
+    ctx.set_line_width(1.5)
+    ctx.move_to(4, -20)
+    ctx.line_to(155, -20)
+    ctx.stroke()
+    ctx.restore()
+
+    tip_x = w - 30
+    spine_y = blade_y - 8
+    edge_y = blade_y + 78
+    blade = cairo.LinearGradient(0, spine_y, 0, edge_y)
+    blade.add_color_stop_rgb(0.0, 0.55, 0.58, 0.62)
+    blade.add_color_stop_rgb(0.15, 0.78, 0.82, 0.86)
+    blade.add_color_stop_rgb(0.45, 0.95, 0.96, 0.97)
+    blade.add_color_stop_rgb(0.72, 0.55, 0.58, 0.62)
+    blade.add_color_stop_rgb(0.92, 0.25, 0.26, 0.28)
+    blade.add_color_stop_rgb(1.0, 0.92, 0.94, 0.96)
     ctx.set_source(blade)
-    ctx.move_to(-30, blade_y)
-    ctx.line_to(w + 30, blade_y - 14)
-    ctx.line_to(w + 30, blade_y + 120)
-    ctx.line_to(-30, blade_y + 140)
+    ctx.move_to(180, spine_y + 10)
+    ctx.line_to(tip_x - 40, spine_y)
+    ctx.line_to(tip_x, spine_y + 18)
+    ctx.line_to(tip_x - 20, edge_y)
+    ctx.line_to(200, edge_y + 6)
+    ctx.line_to(180, spine_y + 35)
     ctx.close_path()
     ctx.fill()
 
-    # Knife-edge specular (cold sky reflection)
-    set_rgb(ctx, COLD_WHITE, 0.95)
-    ctx.set_line_width(2.4)
-    ctx.move_to(-30, blade_y)
-    ctx.line_to(w + 30, blade_y - 14)
+    set_rgb(ctx, COLD_WHITE, 0.55)
+    ctx.set_line_width(2.5)
+    ctx.move_to(185, spine_y + 10)
+    ctx.line_to(tip_x - 40, spine_y)
     ctx.stroke()
-    # Bevel facet
-    set_rgb(ctx, TUNGSTEN, 0.45)
-    ctx.set_line_width(5)
-    ctx.move_to(0, blade_y + 18)
-    ctx.line_to(w, blade_y + 8)
-    ctx.stroke()
-    # Micro scratches along steel
-    set_rgb(ctx, COLD_WHITE, 0.12)
-    ctx.set_line_width(0.7)
-    for i in range(12):
-        yy = blade_y + 28 + i * 7
-        ctx.move_to(40 + i * 30, yy)
-        ctx.line_to(200 + i * 55, yy - 3)
-        ctx.stroke()
 
-    # Microscopic wire under tension
-    wire_y = h * 0.72
-    # Tension vibration
-    vib = math.sin(t * 40) * (0.8 + 1.5 * abs(math.sin(t * 2.2)))
-    set_rgb(ctx, STEEL, 0.9)
-    ctx.set_line_width(1.1)
-    ctx.move_to(40, wire_y)
-    for x in range(40, w - 40, 4):
-        # Footsteps cause sharp local vibration
-        walker_x = 80 + ((t * 35) % (w - 160))
+    set_rgb(ctx, (1, 1, 1), 0.98)
+    ctx.set_line_width(2.0)
+    ctx.move_to(200, edge_y + 5)
+    ctx.line_to(tip_x - 20, edge_y)
+    ctx.stroke()
+    set_rgb(ctx, TUNGSTEN, 0.5)
+    ctx.set_line_width(4)
+    ctx.move_to(205, edge_y - 10)
+    ctx.line_to(tip_x - 25, edge_y - 14)
+    ctx.stroke()
+
+    set_rgb(ctx, COLD_WHITE, 0.35)
+    ctx.set_line_width(6)
+    ctx.move_to(220, blade_y + 20)
+    ctx.line_to(tip_x - 60, blade_y + 8)
+    ctx.stroke()
+
+    set_rgb(ctx, STEEL, 0.25)
+    ctx.set_line_width(1.2)
+    ctx.arc(w * 0.55, blade_y + 30, 90, 0.15, math.pi - 0.4)
+    ctx.stroke()
+
+    wire_y = h * 0.78
+    walker_x = 100 + ((t * 42) % (w - 200))
+    vib = math.sin(t * 48) * (1.0 + 2.0 * abs(math.sin(t * 2.5)))
+
+    for px in (70, w - 70):
+        post = cairo.LinearGradient(px - 10, wire_y - 50, px + 10, wire_y + 40)
+        post.add_color_stop_rgb(0, 0.4, 0.42, 0.45)
+        post.add_color_stop_rgb(1, 0.12, 0.12, 0.14)
+        ctx.set_source(post)
+        ctx.rectangle(px - 10, wire_y - 50, 20, 90)
+        ctx.fill()
+        set_rgb(ctx, BRONZE, 0.7)
+        ctx.rectangle(px - 14, wire_y - 8, 28, 10)
+        ctx.fill()
+
+    set_rgb(ctx, (0.75, 0.78, 0.82), 0.95)
+    ctx.set_line_width(1.6)
+    ctx.move_to(70, wire_y)
+    for x in range(70, w - 70, 3):
         dist = abs(x - walker_x)
-        local_vib = vib * math.exp(-dist * 0.04) * 8
-        ctx.line_to(x, wire_y + local_vib + math.sin(x * 0.05 + t) * 0.5)
-    ctx.line_to(w - 40, wire_y)
+        local_vib = vib * math.exp(-dist * 0.035) * 10
+        ctx.line_to(x, wire_y + local_vib)
+    ctx.line_to(w - 70, wire_y)
+    ctx.stroke()
+    set_rgb(ctx, AMBER, 0.25)
+    ctx.set_line_width(0.8)
+    ctx.move_to(70, wire_y - 1)
+    ctx.line_to(w - 70, wire_y - 1)
     ctx.stroke()
 
-    # Anchor posts
-    set_rgb(ctx, BRONZE, 0.8)
-    ctx.rectangle(30, wire_y - 30, 12, 60)
-    ctx.rectangle(w - 42, wire_y - 30, 12, 60)
+    dist_phase = (t * 42) % 18
+    step = 1 if dist_phase < 3 else 0
+    # Larger walker so the "tiny silhouette on the wire" still reads at 1080p
+    wx, wy = walker_x, wire_y - 55 - step * 3
+    set_rgb(ctx, AMBER, 0.5)
+    ctx.arc(wx, wire_y, 7, 0, 2 * math.pi)
     ctx.fill()
-
-    # Tiny faceless silhouette on wire (readable at macro scale)
-    walker_x = 80 + ((t * 35) % (w - 160))
-    dist_phase = (t * 35) % 20
-    step_vib = 6 if dist_phase < 2 else 0
-    wx, wy = walker_x, wire_y - 28 - step_vib * 0.3
-    # Soft contact shadow on wire
-    set_rgb(ctx, AMBER, 0.3)
-    ctx.arc(wx, wire_y + 1, 8, 0, 2 * math.pi)
-    ctx.fill()
-    # Body
     set_rgb(ctx, (0.02, 0.02, 0.03), 1)
-    ctx.set_line_width(4.5)
+    ctx.set_line_width(5)
     ctx.set_line_cap(cairo.LINE_CAP_ROUND)
-    ctx.move_to(wx - 7, wy + 24)
-    ctx.line_to(wx, wy + 4)
-    ctx.line_to(wx + 7, wy + 24)
+    ctx.move_to(wx, wy + 14)
+    ctx.line_to(wx - 12 - step * 4, wire_y - 2)
+    ctx.move_to(wx, wy + 14)
+    ctx.line_to(wx + 11 + (1 - step) * 4, wire_y - 2)
     ctx.stroke()
-    # Torso block
-    ctx.set_line_width(7)
-    ctx.move_to(wx, wy + 4)
-    ctx.line_to(wx, wy - 8)
+    ctx.set_line_width(11)
+    ctx.move_to(wx, wy + 14)
+    ctx.line_to(wx, wy - 10)
     ctx.stroke()
-    # Head
-    ctx.arc(wx, wy - 14, 7, 0, 2 * math.pi)
+    set_rgb(ctx, (0.03, 0.03, 0.04), 1)
+    ctx.move_to(wx - 14, wy - 4)
+    ctx.line_to(wx, wy - 18)
+    ctx.line_to(wx + 14, wy - 4)
+    ctx.line_to(wx + 11, wy + 12)
+    ctx.line_to(wx - 11, wy + 12)
+    ctx.close_path()
     ctx.fill()
-    set_rgb(ctx, COLD_WHITE, 0.25)
-    ctx.set_line_width(1)
-    ctx.arc(wx, wy - 14, 7, 0, 2 * math.pi)
-    ctx.stroke()
-    # Hollow head cavity micro-hint
-    set_rgb(ctx, TUNGSTEN, 0.4)
-    ctx.arc(wx, wy - 14, 3.2, 0, 2 * math.pi)
+    ctx.arc(wx, wy - 28, 10, 0, 2 * math.pi)
     ctx.fill()
-    # Arms for balance
+    # Fedora
+    ctx.rectangle(wx - 14, wy - 36, 28, 4)
+    ctx.fill()
+    ctx.arc(wx, wy - 36, 11, math.pi, 2 * math.pi)
+    ctx.fill()
+    set_rgb(ctx, STEEL, 0.9)
+    ctx.set_line_width(2.2)
+    ctx.move_to(wx - 42, wy - 8)
+    ctx.line_to(wx + 42, wy - 14)
+    ctx.stroke()
     set_rgb(ctx, (0.02, 0.02, 0.03), 1)
-    ctx.set_line_width(2.6)
-    ctx.move_to(wx, wy - 4)
-    ctx.line_to(wx - 20, wy - 10)
-    ctx.move_to(wx, wy - 4)
-    ctx.line_to(wx + 20, wy - 6)
+    ctx.set_line_width(3.5)
+    ctx.move_to(wx, wy - 12)
+    ctx.line_to(wx - 24, wy - 9)
+    ctx.move_to(wx, wy - 12)
+    ctx.line_to(wx + 24, wy - 12)
     ctx.stroke()
 
-    # Extreme tension sparks (amber ticks)
-    if abs(vib) > 1.5:
-        set_rgb(ctx, AMBER, 0.5)
-        for i in range(3):
-            sx = walker_x + random.uniform(-20, 20)
-            ctx.arc(sx, wire_y + random.uniform(-2, 2), 1, 0, 2 * math.pi)
-            ctx.fill()
+    set_rgb(ctx, BLOOD, 0.08)
+    ctx.rectangle(0, edge_y, w, max(1, wire_y - edge_y - 40))
+    ctx.fill()
 
 
 def draw_bangle(
@@ -1353,12 +1836,38 @@ class Director:
         self._bangle_shattered = False
         self._strap_snapped = False
         self._disintegrating = False
+        self._gun_fired = False
         self._fibers_left = 12
-        self._commuters = [
-            {"x": random.uniform(-100, WIDTH + 100), "speed": random.uniform(28, 55),
-             "phase": random.uniform(0, 10), "scale": random.uniform(0.85, 1.15),
-             "lamp": i}
-            for i in range(7)
+        coats = ["trench", "coat", "jacket", "raincoat", "overcoat"]
+        hairs = ["short", "long", "buzz", "bun", "bald"]
+        hats = ["none", "fedora", "cap", "beanie", "bowler", "none"]
+        builds = ["slim", "avg", "heavy"]
+        self._commuters = []
+        for i in range(9):
+            self._commuters.append(
+                {
+                    "x": random.uniform(-120, WIDTH + 120),
+                    "speed": random.uniform(26, 58),
+                    "phase": random.uniform(0, 10),
+                    "scale": random.uniform(0.82, 1.22),
+                    "facing": 1 if i % 3 else -1,
+                    "style": {
+                        "coat": coats[i % len(coats)],
+                        "hair": hairs[i % len(hairs)],
+                        "hat": hats[(i * 2) % len(hats)] if hairs[i % len(hairs)] != "bun" else "none",
+                        "build": builds[i % len(builds)],
+                        "bag": i % 3 == 0,
+                        "facing": 1 if i % 3 else -1,
+                    },
+                }
+            )
+        # Scene 2 aircraft
+        self._planes = [
+            {"x": -200.0, "y": 150.0, "vx": 100.0, "vy": 5.0, "scale": 1.55, "bank": 0.12, "trail": [], "delay": 1.0},
+            {"x": WIDTH + 220.0, "y": 230.0, "vx": -120.0, "vy": -7.0, "scale": 1.25, "bank": -0.18, "trail": [], "delay": 8.0},
+            {"x": -280.0, "y": 310.0, "vx": 85.0, "vy": -12.0, "scale": 1.85, "bank": 0.08, "trail": [], "delay": 18.0},
+            {"x": WIDTH + 300.0, "y": 110.0, "vx": -75.0, "vy": 9.0, "scale": 1.05, "bank": 0.22, "trail": [], "delay": 32.0},
+            {"x": -350.0, "y": 200.0, "vx": 130.0, "vy": 2.0, "scale": 0.95, "bank": -0.1, "trail": [], "delay": 45.0},
         ]
         self._rng_state = random.Random(42)
 
@@ -1383,12 +1892,19 @@ class Director:
             self._bangle_shattered = False
             self._strap_snapped = False
             self._disintegrating = False
+            self._gun_fired = False
             self._fibers_left = 12
             parts.shards.clear()
             parts.dust.clear()
             parts.fiber_bits.clear()
             cam.target_zoom = 1.0
             cam.zoom = 1.0
+            for p in self._planes:
+                p["trail"] = []
+                if p["vx"] > 0:
+                    p["x"] = -200.0 - abs(p["delay"]) * 10
+                else:
+                    p["x"] = WIDTH + 220.0 + abs(p["delay"]) * 10
 
         aberrate = 0.0
         grain = 0.4
@@ -1406,6 +1922,13 @@ class Director:
             parts.shards.clear()
             self._scene3(ctx, t, dt)
             grain = 0.3
+            # Sustained shake / aberration during muzzle blast
+            if t >= S3_FIRE:
+                fire_age = t - S3_FIRE
+                if fire_age < 2.0:
+                    cam.impulse(18 * max(0.0, 1.0 - fire_age * 0.7))
+                    aberrate = 1.6 * max(0.0, 1.0 - fire_age * 0.5)
+                    grain = 0.7
         elif t < S4_END:
             self._scene4(ctx, t, dt)
             grain = 0.5
@@ -1446,14 +1969,26 @@ class Director:
         xray = smoothstep(12.0, 28.0, t) * (1.0 - 0.3 * smoothstep(40.0, 48.0, t))
 
         for c in self._commuters:
-            c["x"] += c["speed"] * dt
-            if c["x"] > WIDTH + 80:
-                c["x"] = -80
-                c["scale"] = random.uniform(0.85, 1.15)
-                c["speed"] = random.uniform(28, 55)
+            direction = c["style"].get("facing", 1)
+            c["x"] += c["speed"] * dt * direction
+            if direction > 0 and c["x"] > WIDTH + 100:
+                c["x"] = -100
+                c["scale"] = random.uniform(0.82, 1.22)
+                c["speed"] = random.uniform(26, 58)
+            elif direction < 0 and c["x"] < -100:
+                c["x"] = WIDTH + 100
+                c["scale"] = random.uniform(0.82, 1.22)
+                c["speed"] = random.uniform(26, 58)
             phase = t * 3.2 + c["phase"]
             draw_hollow_silhouette(
-                ctx, c["x"] - cam_x * 0.15, ground_y, c["scale"], t, phase, xray
+                ctx,
+                c["x"] - cam_x * 0.15,
+                ground_y,
+                c["scale"],
+                t,
+                phase,
+                xray,
+                style=c["style"],
             )
 
         # Rain
@@ -1464,7 +1999,6 @@ class Director:
     def _scene2(self, ctx: cairo.Context, t: float, dt: float) -> None:
         local = t - S1_END
         self.canvas.clear()
-        # Pan up: show dwindling skyline then atom
         pan = smoothstep(0, 8, local)
         draw_noir_sky(ctx, WIDTH, HEIGHT, t, dusk=0.7)
         if pan < 0.95:
@@ -1473,7 +2007,36 @@ class Director:
             draw_city_skyline(ctx, WIDTH, HEIGHT, t, local * 5)
             ctx.restore()
         draw_atom_loom(ctx, WIDTH, HEIGHT, t, local)
-        # Soft particles as static
+
+        # Aircraft looping past the atom with smoke / contrails
+        for i, p in enumerate(self._planes):
+            if local < p["delay"]:
+                continue
+            p["x"] += p["vx"] * dt
+            p["y"] += p["vy"] * dt + math.sin(t * 1.2 + i) * 8 * dt
+            # Recycle off-screen
+            if p["vx"] > 0 and p["x"] > WIDTH + 260:
+                p["x"] = -260
+                p["y"] = 120 + (i * 70) % 280
+                p["trail"] = []
+            elif p["vx"] < 0 and p["x"] < -260:
+                p["x"] = WIDTH + 260
+                p["y"] = 100 + (i * 85) % 300
+                p["trail"] = []
+            # Trail points (engine exhaust slightly behind)
+            heading = 0.0 if p["vx"] > 0 else math.pi
+            heading += math.atan2(p["vy"], abs(p["vx"])) * (1 if p["vx"] > 0 else -1) * 0.5
+            ex = p["x"] - math.cos(heading) * 50 * p["scale"]
+            ey = p["y"] - math.sin(heading) * 8
+            p["trail"].append((ex, ey, 1.0))
+            # Fade & trim
+            p["trail"] = [(x, y, a - dt * 0.55) for x, y, a in p["trail"] if a - dt * 0.55 > 0.05][-80:]
+            draw_plane_trail(ctx, p["trail"])
+            draw_airplane(ctx, p["x"], p["y"], p["scale"], heading, bank=p["bank"])
+            # Occasional engine smoke puffs into particle system
+            if random.random() < 0.15:
+                self.particles.spawn_smoke(ex, ey)
+
         if random.random() < 0.2:
             self.particles.dust.append(
                 DustMote(
@@ -1491,17 +2054,49 @@ class Director:
     def _scene3(self, ctx: cairo.Context, t: float, dt: float) -> None:
         local = t - S2_END
         self.canvas.clear(CHARCOAL)
-        if t < S3_RAZOR:
-            zoom_t = smoothstep(S3_BARREL_ZOOM - S2_END, S3_RAZOR - S2_END, local)
-            draw_gun_pillow_scene(ctx, WIDTH, HEIGHT, t, local, zoom_t)
+        fire_t = max(0.0, t - S3_FIRE) if t >= S3_FIRE else 0.0
+
+        if t < S3_FIRE + 0.15:
+            # Hold on barrel (with smoker) through zoom, fire at S3_FIRE
+            zoom_t = smoothstep(S3_BARREL_ZOOM - S2_END, S3_FIRE - S2_END, local)
+            # Keep enough frame to read the smoker + muzzle blast (don't bury flash in bore)
+            zoom_t = min(zoom_t, 0.48)
+            if t >= S3_FIRE and not self._gun_fired:
+                self._gun_fired = True
+                self.camera.impulse(22)
+                # Blast smoke into particle world
+                for _ in range(18):
+                    self.particles.spawn_smoke(
+                        WIDTH * 0.78 + random.uniform(-20, 40),
+                        HEIGHT * 0.52 + random.uniform(-30, 30),
+                    )
+                    self.particles.dust.append(
+                        DustMote(
+                            x=WIDTH * 0.8 + random.uniform(-30, 30),
+                            y=HEIGHT * 0.5 + random.uniform(-20, 20),
+                            vx=random.uniform(40, 160),
+                            vy=random.uniform(-60, 40),
+                            r=random.uniform(1.5, 4.0),
+                            life=random.uniform(0.8, 1.8),
+                            max_life=1.8,
+                            color=random.choice([AMBER, STEEL, SLATE]),
+                        )
+                    )
+            draw_gun_pillow_scene(ctx, WIDTH, HEIGHT, t, local, zoom_t, fire_t=fire_t)
+        elif t < S3_RAZOR:
+            # Brief aftershock — pull back slightly so blast smoke reads
+            zoom_t = 0.55
+            draw_gun_pillow_scene(ctx, WIDTH, HEIGHT, t, local, zoom_t, fire_t=fire_t)
+            for _ in range(2):
+                self.particles.spawn_smoke(
+                    WIDTH * 0.82 + random.uniform(-10, 60),
+                    HEIGHT * 0.5 + random.uniform(-40, 20),
+                )
         else:
-            # Crossfade into razor
-            blend = smoothstep(S3_RAZOR, S3_RAZOR + 2.0, t)
+            blend = smoothstep(S3_RAZOR, S3_RAZOR + 1.5, t)
             if blend < 1:
-                zoom_t = 1.0
-                draw_gun_pillow_scene(ctx, WIDTH, HEIGHT, t, local, zoom_t)
-                # Darken
-                set_rgb(ctx, CHARCOAL, blend * 0.85)
+                draw_gun_pillow_scene(ctx, WIDTH, HEIGHT, t, local, 1.0, fire_t=fire_t)
+                set_rgb(ctx, CHARCOAL, blend * 0.9)
                 ctx.paint()
             draw_razor_wire_scene(ctx, WIDTH, HEIGHT, t, t - S3_RAZOR)
 
