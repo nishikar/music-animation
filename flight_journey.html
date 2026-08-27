@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Epic Bush Flight: 4m 26s Multi-Biome Journey</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      overflow: hidden;
+      background-color: #010409;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      user-select: none;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #hud {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      color: #f8fafc;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.95);
+      pointer-events: none;
+      z-index: 10;
+    }
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+      color: #f1f5f9;
+    }
+    .biome-tag {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #38bdf8;
+      margin-bottom: 6px;
+    }
+    .telemetry {
+      font-family: "SF Mono", Monaco, "Courier New", monospace;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      display: flex;
+      gap: 16px;
+    }
+    #timeline-panel {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 64px);
+      max-width: 900px;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 14px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 20;
+    }
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: #cbd5e1;
+    }
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    #time-slider {
+      flex-grow: 1;
+      accent-color: #38bdf8;
+      cursor: pointer;
+    }
+    .btn {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #f8fafc;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: #334155;
+    }
+    .btn-active {
+      background: #0284c7;
+      border-color: #38bdf8;
+    }
+    #audio-prompt {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 16px;
+      padding: 32px 40px;
+      text-align: center;
+      color: #f8fafc;
+      z-index: 100;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.8);
+    }
+    #audio-prompt h2 {
+      margin-bottom: 8px;
+      font-size: 1.5rem;
+      color: #38bdf8;
+    }
+    #audio-prompt p {
+      font-size: 0.9rem;
+      color: #94a3b8;
+      margin-bottom: 20px;
+      max-width: 320px;
+      line-height: 1.4;
+    }
+    #audio-prompt button {
+      padding: 12px 28px;
+      background: #0284c7;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="audio-prompt">
+    <h2>Bush Flight Odyssey</h2>
+    <p>4 min 26 sec scenic flight through 10 biomes with procedural sound, dynamic weather, and flight kinetics.</p>
+    <button id="start-btn">Begin Flight</button>
+  </div>
+
+  <div id="hud">
+    <h1>Super Cub 4K</h1>
+    <div class="biome-tag" id="hud-biome">Runway Takeoff</div>
+    <div class="telemetry">
+      <span>ALT: <b id="hud-alt">0</b> FT</span>
+      <span>SPD: <b id="hud-spd">0</b> KTS</span>
+      <span>TIME: <b id="hud-time">00:00 / 04:26</b></span>
+    </div>
+  </div>
+
+  <div id="timeline-panel">
+    <div class="timeline-header">
+      <span id="journey-phase">Outbound: Leg 1 of 10</span>
+      <span id="current-timestamp">00:00 / 04:26</span>
+    </div>
+    <div class="controls-row">
+      <button class="btn" id="play-pause-btn">Pause</button>
+      <input type="range" id="time-slider" min="0" max="266" step="0.1" value="0" />
+      <button class="btn" id="cam-btn">Cam: Cinematic Chase</button>
+      <button class="btn" id="mute-btn">Mute Audio</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    // -------------------------------------------------------------------------
+    // 1. CONSTANTS & BIOME TIMELINE (TOTAL DURATION = 266 SECONDS / 4m 26s)
+    // -------------------------------------------------------------------------
+    const TOTAL_DURATION = 266.0;
+    const HALF_DURATION = 133.0; // Midpoint Turnaround in Lush Forest
+
+    const BIOMES = [
+      { name: "Airfield Runway Takeoff", endT: 14,  sky: [0.65, 0.78, 0.95], fog: 0x94b5d6, fogDense: 0.0008, alt: 5 },
+      { name: "Provincial River Town",   endT: 28,  sky: [0.55, 0.75, 0.92], fog: 0x86b0d9, fogDense: 0.0010, alt: 45 },
+      { name: "Winding River Valley",    endT: 42,  sky: [0.45, 0.70, 0.90], fog: 0x73a5d8, fogDense: 0.0012, alt: 80 },
+      { name: "Rolling Green Hills",     endT: 56,  sky: [0.40, 0.68, 0.92], fog: 0x6ca3da, fogDense: 0.0010, alt: 110 },
+      { name: "Snow-Capped Alpine Range",endT: 74,  sky: [0.20, 0.45, 0.85], fog: 0xa8c5e6, fogDense: 0.0015, alt: 220 },
+      { name: "Red Rock Canyon Gorge",   endT: 90,  sky: [0.85, 0.65, 0.45], fog: 0xd49b72, fogDense: 0.0014, alt: 75 },
+      { name: "Arid Desert Flats",       endT: 104, sky: [0.90, 0.78, 0.55], fog: 0xe2ba8a, fogDense: 0.0011, alt: 60 },
+      { name: "Undulating Sand Dunes",   endT: 116, sky: [0.88, 0.74, 0.50], fog: 0xddb17e, fogDense: 0.0012, alt: 50 },
+      { name: "Coastal Shore & Tropical Sea", endT: 124, sky: [0.35, 0.72, 0.96], fog: 0x76c2ec, fogDense: 0.0009, alt: 40 },
+      { name: "Lush Ancient Forest (Turnaround)", endT: 133, sky: [0.25, 0.55, 0.40], fog: 0x3d7052, fogDense: 0.0018, alt: 95 }
+    ];
+
+    function getBiomeInfo(t) {
+      let normT = t;
+      let isReversed = false;
+      if (t > HALF_DURATION) {
+        normT = TOTAL_DURATION - t;
+        isReversed = true;
+      }
+
+      let current = BIOMES[0];
+      let prevEnd = 0;
+      for (let i = 0; i < BIOMES.length; i++) {
+        if (normT <= BIOMES[i].endT) {
+          current = BIOMES[i];
+          const localProgress = (normT - prevEnd) / (BIOMES[i].endT - prevEnd);
+          return {
+            name: (isReversed ? "[Reverse] " : "") + current.name,
+            sky: current.sky,
+            fog: current.fog,
+            fogDense: current.fogDense,
+            isReversed,
+            progress: localProgress,
+            index: i
+          };
+        }
+        prevEnd = BIOMES[i].endT;
+      }
+      return { name: BIOMES[BIOMES.length - 1].name, sky: BIOMES[BIOMES.length - 1].sky, fog: 0x3d7052, fogDense: 0.001, isReversed, progress: 1.0, index: 9 };
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. RENDERER, SCENE, AND CAMERA SETUP
+    // -------------------------------------------------------------------------
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x94b5d6, 0.001);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.2, 5000);
+    camera.position.set(0, 10, 30);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // Post-Processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.35, 0.4, 0.85
+    );
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+
+    // -------------------------------------------------------------------------
+    // 3. LIGHTING & ATMOSPHERIC SKY
+    // -------------------------------------------------------------------------
+    const sunLight = new THREE.DirectionalLight(0xfffaed, 2.6);
+    sunLight.position.set(300, 450, -200).normalize();
+    sunLight.castShadow = true;
+    scene.add(sunLight);
+
+    const hemiLight = new THREE.HemisphereLight(0xbfdbfe, 0x1e293b, 0.8);
+    scene.add(hemiLight);
+
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: {
+        uSunDir: { value: sunLight.position.clone().normalize() },
+        uSkyColor: { value: new THREE.Vector3(0.65, 0.78, 0.95) }
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        void main() {
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uSunDir;
+        uniform vec3 uSkyColor;
+        varying vec3 vWorldPos;
+
+        void main() {
+          vec3 dir = normalize(vWorldPos);
+          float sunCos = dot(dir, normalize(uSunDir));
+          float h = max(0.0, dir.y);
+
+          vec3 zenith = uSkyColor * 0.55;
+          vec3 horizon = uSkyColor * 1.15;
+          vec3 sky = mix(horizon, zenith, pow(h, 0.45));
+
+          float sunDisc = smoothstep(0.9985, 0.9995, sunCos);
+          float sunHaze = pow(max(0.0, sunCos), 32.0) * 0.45;
+
+          gl_FragColor = vec4(sky + vec3(1.0, 0.95, 0.8) * (sunDisc * 3.5 + sunHaze), 1.0);
+        }
+      `
+    });
+    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(3000, 32, 32), skyMat);
+    scene.add(skyDome);
+
+    // -------------------------------------------------------------------------
+    // 4. CONTINUOUS MULTI-BIOME PROCEDURAL TERRAIN SYSTEM
+    // -------------------------------------------------------------------------
+    const TERRAIN_LENGTH = 14000;
+    const TERRAIN_WIDTH = 3000;
+
+    // Procedural Elevation Function mapped along path coordinate (Z: 0 to -TERRAIN_LENGTH)
+    function getTerrainElevation(x, z) {
+      const prog = Math.min(Math.max(-z / TERRAIN_LENGTH, 0.0), 1.0);
+
+      // Biome 0: Runway (0.00 - 0.05)
+      if (prog < 0.05) {
+        const distFromRunway = Math.abs(x);
+        if (distFromRunway < 25) return 0.0;
+        return (Math.sin(x * 0.05) * 2.0 + Math.cos(z * 0.05) * 2.0) * (distFromRunway / 100);
+      }
+      // Biome 1: Town (0.05 - 0.12)
+      else if (prog < 0.12) {
+        return Math.sin(x * 0.02) * 5.0 + Math.cos(z * 0.02) * 4.0;
+      }
+      // Biome 2: Valley (0.12 - 0.22)
+      else if (prog < 0.22) {
+        const valley = Math.pow(Math.abs(x) * 0.015, 2.0) * 14.0;
+        return valley + Math.sin(z * 0.03) * 10.0;
+      }
+      // Biome 3: Green Hills (0.22 - 0.35)
+      else if (prog < 0.35) {
+        return Math.sin(x * 0.008) * 45.0 + Math.cos(z * 0.007) * 40.0 + Math.sin((x+z)*0.015)*15.0;
+      }
+      // Biome 4: Snow Mountains (0.35 - 0.52)
+      else if (prog < 0.52) {
+        let h = (1.0 - Math.abs(Math.sin((x + z * 0.5) * 0.005))) * 240.0;
+        h += (1.0 - Math.abs(Math.cos((x * 0.7 - z) * 0.007))) * 180.0;
+        h += Math.sin(x * 0.02) * 30.0;
+        const valleyCarve = Math.min(Math.abs(x) / 120.0, 1.0);
+        return h * valleyCarve - 10.0;
+      }
+      // Biome 5: Red Rock Canyon (0.52 - 0.65)
+      else if (prog < 0.65) {
+        const canyonW = Math.abs(x - Math.sin(z * 0.008) * 80.0);
+        const canyonWall = Math.min(Math.pow(canyonW * 0.03, 4.0) * 12.0, 160.0);
+        const strataStep = Math.floor(canyonWall / 20.0) * 18.0;
+        return strataStep + Math.sin(x * 0.05) * 2.0;
+      }
+      // Biome 6: Arid Desert (0.65 - 0.76)
+      else if (prog < 0.76) {
+        return Math.sin(x * 0.003) * 12.0 + Math.cos(z * 0.004) * 8.0;
+      }
+      // Biome 7: Sand Dunes (0.76 - 0.86)
+      else if (prog < 0.86) {
+        return (Math.sin(x * 0.015 + z * 0.01) * 25.0) + (Math.sin(x * 0.04) * 6.0);
+      }
+      // Biome 8: Ocean & Beaches (0.86 - 0.94)
+      else if (prog < 0.94) {
+        const coast = (x * 0.02) + Math.sin(z * 0.01) * 15.0;
+        return Math.max(-25.0, coast);
+      }
+      // Biome 9: Lush Forest (0.94 - 1.0)
+      else {
+        return Math.sin(x * 0.006) * 35.0 + Math.cos(z * 0.006) * 30.0 + 15.0;
+      }
+    }
+
+    // Custom Biome Terrain Splat Shader
+    const terrainMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uSunDir: { value: sunLight.position.clone().normalize() },
+        uLength: { value: TERRAIN_LENGTH }
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        varying vec2 vUv;
+
+        void main() {
+          vUv = uv;
+          vNormal = normalize(normalMatrix * normal);
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uSunDir;
+        uniform float uLength;
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        varying vec2 vUv;
+
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                     mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
+        void main() {
+          vec3 N = normalize(vNormal);
+          vec3 L = normalize(uSunDir);
+          float diff = max(0.0, dot(N, L));
+          float slope = 1.0 - max(0.0, N.y);
+          float progress = clamp(-vWorldPos.z / uLength, 0.0, 1.0);
+
+          float n = noise(vWorldPos.xz * 0.15) * 0.5 + noise(vWorldPos.xz * 0.6) * 0.5;
+
+          // Biome Albedos
+          vec3 runwayAsphalt = vec3(0.12, 0.12, 0.14);
+          vec3 townGrass     = vec3(0.25, 0.42, 0.18);
+          vec3 valleyEarth   = vec3(0.32, 0.38, 0.22);
+          vec3 emeraldHills  = vec3(0.20, 0.55, 0.15);
+          vec3 rockBasalt    = vec3(0.12, 0.13, 0.15);
+          vec3 snowPeak      = vec3(0.95, 0.98, 1.0);
+          vec3 redCanyon     = vec3(0.68, 0.28, 0.14) + sin(vWorldPos.y * 0.3) * 0.08;
+          vec3 desertSand    = vec3(0.85, 0.72, 0.45);
+          vec3 goldenDunes   = vec3(0.92, 0.76, 0.38) + sin(vWorldPos.x * 0.8) * 0.04;
+          vec3 oceanWater    = vec3(0.04, 0.35, 0.55);
+          vec3 beachSand     = vec3(0.88, 0.82, 0.65);
+          vec3 lushForest    = vec3(0.10, 0.30, 0.12);
+
+          // Smooth Biome Splatting along path
+          vec3 col = runwayAsphalt;
+
+          if (progress < 0.05) {
+            // Runway markings
+            if (abs(vWorldPos.x) < 8.0 && abs(vWorldPos.z) < 400.0) {
+              if (abs(vWorldPos.x) < 0.4 && mod(vWorldPos.z, 20.0) < 10.0) col = vec3(0.95);
+              else col = runwayAsphalt;
+            } else {
+              col = townGrass;
+            }
+          }
+          else if (progress < 0.12) col = mix(townGrass, valleyEarth, (progress - 0.05) / 0.07);
+          else if (progress < 0.22) col = mix(valleyEarth, emeraldHills, (progress - 0.12) / 0.10);
+          else if (progress < 0.35) col = mix(emeraldHills, rockBasalt, (progress - 0.22) / 0.13);
+          else if (progress < 0.52) {
+            float snowMask = smoothstep(0.65, 0.38, slope + n * 0.2) * smoothstep(20.0, 90.0, vWorldPos.y);
+            col = mix(rockBasalt, snowPeak, snowMask);
+          }
+          else if (progress < 0.65) col = mix(redCanyon, desertSand, (progress - 0.52) / 0.13);
+          else if (progress < 0.76) col = mix(desertSand, goldenDunes, (progress - 0.65) / 0.11);
+          else if (progress < 0.86) col = mix(goldenDunes, beachSand, (progress - 0.76) / 0.10);
+          else if (progress < 0.94) {
+            if (vWorldPos.y < -2.0) col = oceanWater;
+            else col = mix(beachSand, lushForest, (progress - 0.86) / 0.08);
+          }
+          else {
+            col = lushForest;
+          }
+
+          vec3 ambient = col * 0.35;
+          vec3 diffuse = col * diff * 0.85;
+
+          gl_FragColor = vec4(ambient + diffuse, 1.0);
+        }
+      `
+    });
+
+    const terrainGeo = new THREE.PlaneGeometry(TERRAIN_WIDTH, TERRAIN_LENGTH, 180, 500);
+    terrainGeo.rotateX(-Math.PI / 2);
+    terrainGeo.translate(0, 0, -TERRAIN_LENGTH / 2);
+
+    const pos = terrainGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i);
+      const pz = pos.getZ(i);
+      pos.setY(i, getTerrainElevation(px, pz));
+    }
+    terrainGeo.computeVertexNormals();
+
+    const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
+    scene.add(terrainMesh);
+
+    // -------------------------------------------------------------------------
+    // 5. INSTANCED BIOME ASSETS (HOUSES, TREES, CACTI, AIRFIELD HANGAR)
+    // -------------------------------------------------------------------------
+    const instancedAssetsGroup = new THREE.Group();
+    scene.add(instancedAssetsGroup);
+
+    // Pine Trees (for Valley, Hills, and Lush Forest)
+    const treeGeo = new THREE.ConeGeometry(2.5, 9, 5);
+    const treeMat = new THREE.MeshStandardMaterial({ color: 0x14381e, roughness: 0.9 });
+    const pineMesh = new THREE.InstancedMesh(treeGeo, treeMat, 2500);
+    const dummy = new THREE.Object3D();
+
+    let pineIdx = 0;
+    for (let i = 0; i < 2500; i++) {
+      const z = -(Math.random() * (TERRAIN_LENGTH - 400) + 200);
+      const prog = -z / TERRAIN_LENGTH;
+
+      // Density tied to forest, hills, valley
+      if ((prog > 0.08 && prog < 0.35) || prog > 0.90) {
+        const x = (Math.random() - 0.5) * (TERRAIN_WIDTH * 0.6);
+        const y = getTerrainElevation(x, z);
+        dummy.position.set(x, y + 4.5, z);
+        dummy.scale.setScalar(0.7 + Math.random() * 0.8);
+        dummy.rotation.y = Math.random() * Math.PI;
+        dummy.updateMatrix();
+        pineMesh.setMatrixAt(pineIdx++, dummy.matrix);
+      }
+    }
+    pineMesh.count = pineIdx;
+    pineMesh.instanceMatrix.needsUpdate = true;
+    instancedAssetsGroup.add(pineMesh);
+
+    // Town Houses
+    const houseGeo = new THREE.BoxGeometry(7, 5, 8);
+    const houseMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.6 });
+    const townHouses = new THREE.InstancedMesh(houseGeo, houseMat, 250);
+    let houseIdx = 0;
+    for (let i = 0; i < 250; i++) {
+      const z = -(Math.random() * 700 + 600); // Town zone
+      const x = (Math.random() - 0.5) * 350;
+      if (Math.abs(x) > 25) {
+        const y = getTerrainElevation(x, z);
+        dummy.position.set(x, y + 2.5, z);
+        dummy.rotation.y = Math.floor(Math.random() * 4) * (Math.PI / 2);
+        dummy.updateMatrix();
+        townHouses.setMatrixAt(houseIdx++, dummy.matrix);
+      }
+    }
+    townHouses.count = houseIdx;
+    townHouses.instanceMatrix.needsUpdate = true;
+    instancedAssetsGroup.add(townHouses);
+
+    // -------------------------------------------------------------------------
+    // 6. DETAILED PROCEDURAL BUSH PLANE (ALASKA SUPER CUB)
+    // -------------------------------------------------------------------------
+    function buildBushPlane() {
+      const plane = new THREE.Group();
+
+      const enamelYellow = new THREE.MeshPhysicalMaterial({
+        color: 0xf59e0b, metalness: 0.1, roughness: 0.35, clearcoat: 1.0, clearcoatRoughness: 0.1
+      });
+      const wingWhite = new THREE.MeshPhysicalMaterial({
+        color: 0xf8fafc, metalness: 0.1, roughness: 0.4
+      });
+      const darkRubber = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.95 });
+      const chrome = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.95, roughness: 0.15 });
+      const glass = new THREE.MeshPhysicalMaterial({
+        color: 0x0f172a, transmission: 0.9, transparent: true, opacity: 1.0, roughness: 0.05, ior: 1.5
+      });
+
+      // Fuselage
+      const bodyGeo = new THREE.CylinderGeometry(0.55, 0.28, 5.0, 16);
+      bodyGeo.rotateX(Math.PI / 2);
+      const body = new THREE.Mesh(bodyGeo, enamelYellow);
+      body.scale.set(0.9, 1.15, 1.0);
+      plane.add(body);
+
+      // Engine Cowling
+      const noseGeo = new THREE.ConeGeometry(0.52, 0.9, 16);
+      noseGeo.rotateX(Math.PI / 2);
+      const nose = new THREE.Mesh(noseGeo, chrome);
+      nose.position.set(0, 0.04, 2.8);
+      plane.add(nose);
+
+      // Wings
+      const wingGeo = new THREE.BoxGeometry(9.4, 0.14, 1.4);
+      const wings = new THREE.Mesh(wingGeo, wingWhite);
+      wings.position.set(0, 0.78, 0.4);
+      plane.add(wings);
+
+      // Struts
+      const strutGeo = new THREE.CylinderGeometry(0.025, 0.025, 2.4);
+      strutGeo.rotateZ(Math.PI / 3);
+      const leftStrut = new THREE.Mesh(strutGeo, chrome);
+      leftStrut.position.set(-1.8, 0.1, 0.4);
+      plane.add(leftStrut);
+
+      const rightStrut = leftStrut.clone();
+      rightStrut.rotation.z = -Math.PI / 3;
+      rightStrut.position.set(1.8, 0.1, 0.4);
+      plane.add(rightStrut);
+
+      // Canopy Glass
+      const cockpitGeo = new THREE.BoxGeometry(0.72, 0.58, 1.5);
+      const cockpit = new THREE.Mesh(cockpitGeo, glass);
+      cockpit.position.set(0, 0.55, 0.8);
+      plane.add(cockpit);
+
+      // Tail
+      const tailFinGeo = new THREE.BoxGeometry(0.1, 1.2, 1.1);
+      const tailFin = new THREE.Mesh(tailFinGeo, enamelYellow);
+      tailFin.position.set(0, 0.75, -2.2);
+      tailFin.rotation.x = -Math.PI / 6;
+      plane.add(tailFin);
+
+      const tailWingGeo = new THREE.BoxGeometry(2.6, 0.08, 0.8);
+      const tailWing = new THREE.Mesh(tailWingGeo, wingWhite);
+      tailWing.position.set(0, 0.28, -2.3);
+      plane.add(tailWing);
+
+      // Oversized Alaska Tundra Tires
+      const tireGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.42, 16);
+      tireGeo.rotateZ(Math.PI / 2);
+      const leftTire = new THREE.Mesh(tireGeo, darkRubber);
+      leftTire.position.set(-0.95, -0.78, 0.9);
+      plane.add(leftTire);
+
+      const rightTire = leftTire.clone();
+      rightTire.position.x = 0.95;
+      plane.add(rightTire);
+
+      // Propeller Hub & Motion Blur Disc
+      const propGroup = new THREE.Group();
+      propGroup.position.set(0, 0.04, 3.3);
+
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 0.04), darkRubber);
+      propGroup.add(blade);
+
+      const blurDisc = new THREE.Mesh(
+        new THREE.CircleGeometry(0.95, 24),
+        new THREE.MeshBasicMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+      );
+      propGroup.add(blurDisc);
+      plane.add(propGroup);
+      plane.userData.propGroup = propGroup;
+
+      return plane;
+    }
+
+    const bushPlane = buildBushPlane();
+    bushPlane.scale.setScalar(2.0);
+    scene.add(bushPlane);
+
+    // -------------------------------------------------------------------------
+    // 7. WEB AUDIO ENGINE (SYNTHESIZED CONTINUOUS ENGINE & PROPELLER DYNAMICS)
+    // -------------------------------------------------------------------------
+    let audioCtx = null;
+    let engineOsc = null;
+    let engineGain = null;
+    let propNoiseNode = null;
+    let isMuted = false;
+
+    function initAudio() {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // 1. Engine Cylinder Rumble (Harmonic Square/Saw Oscillator)
+      engineOsc = audioCtx.createOscillator();
+      engineOsc.type = 'sawtooth';
+      engineOsc.frequency.setValueAtTime(55, audioCtx.currentTime); // Base idle ~1100 RPM
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(320, audioCtx.currentTime);
+
+      engineGain = audioCtx.createGain();
+      engineGain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+
+      engineOsc.connect(filter);
+      filter.connect(engineGain);
+      engineGain.connect(audioCtx.destination);
+      engineOsc.start();
+
+      // 2. Propeller Wind Slipstream (Shaped Noise)
+      const bufferSize = audioCtx.sampleRate * 2;
+      const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+
+      const whiteNoise = audioCtx.createBufferSource();
+      whiteNoise.buffer = noiseBuffer;
+      whiteNoise.loop = true;
+
+      const windFilter = audioCtx.createBiquadFilter();
+      windFilter.type = 'bandpass';
+      windFilter.frequency.setValueAtTime(600, audioCtx.currentTime);
+      windFilter.Q.setValueAtTime(1.5, audioCtx.currentTime);
+
+      propNoiseNode = audioCtx.createGain();
+      propNoiseNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+
+      whiteNoise.connect(windFilter);
+      windFilter.connect(propNoiseNode);
+      propNoiseNode.connect(audioCtx.destination);
+      whiteNoise.start();
+    }
+
+    function updateAudio(rpmNorm) {
+      if (!audioCtx || isMuted) return;
+      const targetFreq = 45 + rpmNorm * 65; // 45 Hz to 110 Hz
+      engineOsc.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
+      propNoiseNode.gain.setTargetAtTime(0.04 + rpmNorm * 0.08, audioCtx.currentTime, 0.1);
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. 4M 26S KINEMATICS & TRAJECTORY SIMULATION
+    // -------------------------------------------------------------------------
+    function computeFlightState(t) {
+      let normProg;
+      let isReturn = false;
+
+      if (t <= HALF_DURATION) {
+        normProg = t / HALF_DURATION;
+      } else {
+        normProg = 1.0 - ((t - HALF_DURATION) / HALF_DURATION);
+        isReturn = true;
+      }
+
+      // Along-axis Z position
+      const z = -normProg * (TERRAIN_LENGTH - 400);
+
+      // Procedural X flight path weaving through valley passes
+      let x = Math.sin(normProg * Math.PI * 6.0) * 120.0 + Math.cos(normProg * Math.PI * 2.0) * 40.0;
+      if (t < 14 || t > (TOTAL_DURATION - 14)) x = 0.0; // Locked to runway centerline during takeoff/landing
+
+      // Altitude Profile
+      const groundH = getTerrainElevation(x, z);
+      let cruiseClearance = 60.0;
+
+      // Specific Altitude overrides per leg
+      if (t < 7.0) {
+        // Takeoff ground roll
+        cruiseClearance = 0.9;
+      } else if (t < 14.0) {
+        // Takeoff climb
+        cruiseClearance = 0.9 + ((t - 7.0) / 7.0) * 45.0;
+      } else if (t > TOTAL_DURATION - 7.0) {
+        // Touchdown rollout
+        cruiseClearance = 0.9;
+      } else if (t > TOTAL_DURATION - 14.0) {
+        // Final approach flare
+        cruiseClearance = 0.9 + ((TOTAL_DURATION - t) / 7.0) * 45.0;
+      } else {
+        cruiseClearance = 45.0 + Math.sin(normProg * Math.PI * 4.0) * 25.0;
+        if (normProg > 0.35 && normProg < 0.52) cruiseClearance = 90.0; // Mountain ridge clearance
+      }
+
+      const y = groundH + cruiseClearance;
+
+      // Airspeed calculation (Knots)
+      let airspeed = 85.0;
+      let rpm = 0.75;
+      if (t < 7.0) {
+        airspeed = (t / 7.0) * 55.0; // Takeoff acceleration
+        rpm = 1.0;
+      } else if (t > TOTAL_DURATION - 7.0) {
+        airspeed = ((TOTAL_DURATION - t) / 7.0) * 45.0; // Landing brake rollout
+        rpm = 0.2;
+      }
+
+      return {
+        pos: new THREE.Vector3(x, y, z),
+        airspeed: Math.round(airspeed),
+        rpm,
+        groundH,
+        altitudeFt: Math.round(y * 3.28),
+        isReturn
+      };
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. UI, SCRUBBING & CAMERA CONTROLLERS
+    // -------------------------------------------------------------------------
+    let currentFlightTime = 0.0;
+    let isPlaying = true;
+    let activeCamMode = 0;
+    const camModes = ["Cinematic Chase", "Wing Strut Cam", "Cockpit POV", "Free Orbit"];
+
+    const timeSlider = document.getElementById('time-slider');
+    const playPauseBtn = document.getElementById('play-pause-btn');
+    const camBtn = document.getElementById('cam-btn');
+    const muteBtn = document.getElementById('mute-btn');
+    const hudBiome = document.getElementById('hud-biome');
+    const hudAlt = document.getElementById('hud-alt');
+    const hudSpd = document.getElementById('hud-spd');
+    const hudTime = document.getElementById('hud-time');
+    const currentTimestamp = document.getElementById('current-timestamp');
+    const journeyPhase = document.getElementById('journey-phase');
+
+    function formatTime(s) {
+      const mins = Math.floor(s / 60);
+      const secs = Math.floor(s % 60);
+      return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    playPauseBtn.addEventListener('click', () => {
+      isPlaying = !isPlaying;
+      playPauseBtn.innerText = isPlaying ? "Pause" : "Play";
+    });
+
+    timeSlider.addEventListener('input', (e) => {
+      currentFlightTime = parseFloat(e.target.value);
+    });
+
+    camBtn.addEventListener('click', () => {
+      activeCamMode = (activeCamMode + 1) % camModes.length;
+      camBtn.innerText = `Cam: ${camModes[activeCamMode]}`;
+      controls.enabled = (activeCamMode === 3);
+    });
+
+    muteBtn.addEventListener('click', () => {
+      isMuted = !isMuted;
+      muteBtn.innerText = isMuted ? "Unmute Audio" : "Mute Audio";
+      if (engineGain) engineGain.gain.setValueAtTime(isMuted ? 0 : 0.18, audioCtx.currentTime);
+      if (propNoiseNode) propNoiseNode.gain.setValueAtTime(isMuted ? 0 : 0.08, audioCtx.currentTime);
+    });
+
+    document.getElementById('start-btn').addEventListener('click', () => {
+      document.getElementById('audio-prompt').style.display = 'none';
+      initAudio();
+    });
+
+    // -------------------------------------------------------------------------
+    // 10. MAIN ANIMATION & RENDER LOOP
+    // -------------------------------------------------------------------------
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = Math.min(clock.getDelta(), 0.1);
+
+      if (isPlaying) {
+        currentFlightTime += delta;
+        if (currentFlightTime > TOTAL_DURATION) currentFlightTime = 0.0;
+        timeSlider.value = currentFlightTime;
+      }
+
+      // Calculate Aircraft State
+      const state = computeFlightState(currentFlightTime);
+      const lookAheadDelta = state.isReturn ? -0.15 : 0.15;
+      const nextState = computeFlightState(Math.min(Math.max(currentFlightTime + lookAheadDelta, 0), TOTAL_DURATION));
+
+      // Update Plane Position & Atmospheric Vibration
+      const vibX = Math.sin(currentFlightTime * 12.0) * 0.04;
+      const vibY = Math.cos(currentFlightTime * 15.0) * 0.04;
+      bushPlane.position.copy(state.pos).add(new THREE.Vector3(vibX, vibY, 0));
+
+      // Aerodynamic Banking & Orientation
+      bushPlane.lookAt(nextState.pos);
+
+      // Centripetal Bank Angle proportional to trajectory curvature
+      const bankFactor = Math.sin(currentFlightTime * 0.3) * (state.isReturn ? -0.5 : 0.5);
+      bushPlane.rotateZ(bankFactor);
+
+      // Spin Propeller
+      bushPlane.userData.propGroup.rotation.z += 0.95;
+
+      // Update Procedural Audio RPM
+      updateAudio(state.rpm);
+
+      // Biome Lighting & Atmosphere Interpolation
+      const biomeInfo = getBiomeInfo(currentFlightTime);
+      skyMat.uniforms.uSkyColor.value.set(biomeInfo.sky[0], biomeInfo.sky[1], biomeInfo.sky[2]);
+      scene.fog.color.setHex(biomeInfo.fog);
+      scene.fog.density = biomeInfo.fogDense;
+
+      // Camera Modes
+      if (activeCamMode === 0) {
+        // Cinematic Chase
+        const offset = new THREE.Vector3(0, 5.5, state.isReturn ? 20 : -20);
+        offset.applyQuaternion(bushPlane.quaternion);
+        camera.position.lerp(bushPlane.position.clone().add(offset), 0.08);
+        camera.lookAt(bushPlane.position.clone().add(new THREE.Vector3(0, 1.5, state.isReturn ? -10 : 10)));
+      } else if (activeCamMode === 1) {
+        // Wing Action Strut Cam
+        const wingOffset = new THREE.Vector3(-6.5, 1.4, 0.0);
+        wingOffset.applyQuaternion(bushPlane.quaternion);
+        camera.position.copy(bushPlane.position).add(wingOffset);
+        camera.lookAt(bushPlane.position.clone().add(new THREE.Vector3(0, 0.5, state.isReturn ? -6 : 6)));
+      } else if (activeCamMode === 2) {
+        // Cockpit POV
+        const cockpitOffset = new THREE.Vector3(0, 1.1, state.isReturn ? -0.8 : 0.8);
+        cockpitOffset.applyQuaternion(bushPlane.quaternion);
+        camera.position.copy(bushPlane.position).add(cockpitOffset);
+        const lookTarget = bushPlane.position.clone().add(new THREE.Vector3(0, 1.0, state.isReturn ? -40 : 40));
+        camera.lookAt(lookTarget);
+      } else if (activeCamMode === 3) {
+        // Free Orbit
+        controls.target.copy(bushPlane.position);
+        controls.update();
+      }
+
+      // Update Telemetry & UI
+      hudBiome.innerText = biomeInfo.name;
+      hudAlt.innerText = state.altitudeFt;
+      hudSpd.innerText = state.airspeed;
+      const timeStr = `${formatTime(currentFlightTime)} / 04:26`;
+      hudTime.innerText = timeStr;
+      currentTimestamp.innerText = timeStr;
+      journeyPhase.innerText = biomeInfo.isReversed ? `Return Leg (Biome ${10 - biomeInfo.index}/10)` : `Outbound Leg (Biome ${biomeInfo.index + 1}/10)`;
+
+      composer.render();
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. WINDOW RESIZE HANDLER
+    // -------------------------------------------------------------------------
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>
