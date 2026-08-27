@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flight Journey</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #02060c;
+      cursor: none;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <audio id="journey-audio" src="flight_journey.mp3" preload="auto" loop></audio>
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    // =========================================================================
+    // CONSTANTS — 4m 26s out-and-back multi-biome bush flight
+    // =========================================================================
+    const TOTAL_DURATION = 266.0;
+    const HALF_DURATION = 133.0;
+    const TERRAIN_LENGTH = 14000;
+    const TERRAIN_WIDTH = 3200;
+
+    const BIOMES = [
+      { name: 'Airfield',   endT: 14,  sky: [0.62, 0.76, 0.94], fog: 0x9bb8d8, dens: 0.00055, sun: 2.8 },
+      { name: 'Town',       endT: 28,  sky: [0.54, 0.73, 0.92], fog: 0x88b0d6, dens: 0.00070, sun: 2.6 },
+      { name: 'Valley',     endT: 42,  sky: [0.46, 0.70, 0.90], fog: 0x76a6d4, dens: 0.00085, sun: 2.5 },
+      { name: 'Hills',      endT: 56,  sky: [0.40, 0.66, 0.91], fog: 0x6ea2d8, dens: 0.00075, sun: 2.55 },
+      { name: 'Alpine',     endT: 74,  sky: [0.22, 0.42, 0.82], fog: 0xb0c8e6, dens: 0.00105, sun: 2.9 },
+      { name: 'Canyon',     endT: 90,  sky: [0.86, 0.62, 0.42], fog: 0xd49a6e, dens: 0.00095, sun: 3.1 },
+      { name: 'Desert',     endT: 104, sky: [0.90, 0.78, 0.54], fog: 0xe2ba88, dens: 0.00080, sun: 3.2 },
+      { name: 'Dunes',      endT: 116, sky: [0.88, 0.74, 0.48], fog: 0xddb07c, dens: 0.00085, sun: 3.15 },
+      { name: 'Coast',      endT: 124, sky: [0.34, 0.70, 0.95], fog: 0x74c0ea, dens: 0.00060, sun: 2.7 },
+      { name: 'Forest',     endT: 133, sky: [0.28, 0.52, 0.42], fog: 0x3f6e54, dens: 0.00125, sun: 2.2 }
+    ];
+
+    // =========================================================================
+    // MATH
+    // =========================================================================
+    const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+    const lerp = (a, b, t) => a + (b - a) * clamp(t);
+    const smoothstep = (e0, e1, x) => {
+      const t = clamp((x - e0) / (e1 - e0));
+      return t * t * (3 - 2 * t);
+    };
+    const hash2 = (x, z) => {
+      const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
+      return s - Math.floor(s);
+    };
+    const noise2 = (x, z) => {
+      const ix = Math.floor(x), iz = Math.floor(z);
+      const fx = x - ix, fz = z - iz;
+      const u = fx * fx * (3 - 2 * fx);
+      const v = fz * fz * (3 - 2 * fz);
+      const a = hash2(ix, iz);
+      const b = hash2(ix + 1, iz);
+      const c = hash2(ix, iz + 1);
+      const d = hash2(ix + 1, iz + 1);
+      return lerp(lerp(a, b, u), lerp(c, d, u), v);
+    };
+    const fbm = (x, z, oct = 5) => {
+      let a = 0, amp = 0.5, f = 1;
+      for (let i = 0; i < oct; i++) {
+        a += amp * noise2(x * f, z * f);
+        f *= 2.03;
+        amp *= 0.5;
+      }
+      return a;
+    };
+
+    // =========================================================================
+    // RENDERER / SCENE / CAMERA / POST
+    // =========================================================================
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+      stencil: false
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x9bb8d8, 0.00055);
+
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.15, 6500);
+    camera.position.set(0, 12, 28);
+
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.28, 0.55, 0.88);
+    composer.addPass(bloomPass);
+
+    // Subtle cinematic grade (warm shadows / cool mids)
+    const gradeShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        uVignette: { value: 0.42 },
+        uWarm: { value: 0.06 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uVignette;
+        uniform float uWarm;
+        varying vec2 vUv;
+        void main() {
+          vec4 c = texture2D(tDiffuse, vUv);
+          float d = distance(vUv, vec2(0.5));
+          float vig = smoothstep(0.85, 0.25, d * uVignette + d);
+          c.rgb *= vig;
+          c.rgb = mix(c.rgb, c.rgb * vec3(1.05, 1.0, 0.94), uWarm);
+          gl_FragColor = c;
+        }
+      `
+    };
+    composer.addPass(new ShaderPass(gradeShader));
+    composer.addPass(new OutputPass());
+
+    // =========================================================================
+    // LIGHTING + SKY
+    // =========================================================================
+    const sunLight = new THREE.DirectionalLight(0xfff3d6, 2.8);
+    sunLight.position.set(420, 620, -280);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 10;
+    sunLight.shadow.camera.far = 900;
+    sunLight.shadow.camera.left = -180;
+    sunLight.shadow.camera.right = 180;
+    sunLight.shadow.camera.top = 140;
+    sunLight.shadow.camera.bottom = -140;
+    sunLight.shadow.bias = -0.00025;
+    sunLight.shadow.normalBias = 0.04;
+    scene.add(sunLight);
+    scene.add(sunLight.target);
+
+    const fillLight = new THREE.DirectionalLight(0xb8d4ff, 0.35);
+    fillLight.position.set(-200, 120, 160);
+    scene.add(fillLight);
+
+    const hemiLight = new THREE.HemisphereLight(0xc9dff8, 0x3a4a38, 0.72);
+    scene.add(hemiLight);
+
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      uniforms: {
+        uSunDir: { value: sunLight.position.clone().normalize() },
+        uSkyColor: { value: new THREE.Vector3(0.62, 0.76, 0.94) },
+        uTime: { value: 0 }
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uSunDir;
+        uniform vec3 uSkyColor;
+        uniform float uTime;
+        varying vec3 vWorldPos;
+
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+        float noise(vec2 p){
+          vec2 i=floor(p), f=fract(p);
+          f=f*f*(3.0-2.0*f);
+          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+                     mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+        }
+
+        void main() {
+          vec3 dir = normalize(vWorldPos);
+          float h = max(dir.y, 0.0);
+          vec3 sun = normalize(uSunDir);
+          float sunCos = dot(dir, sun);
+
+          vec3 zenith = uSkyColor * 0.42;
+          vec3 mid = uSkyColor * 0.95;
+          vec3 horizon = mix(uSkyColor * 1.25, vec3(0.95, 0.78, 0.55), 0.25);
+          vec3 sky = mix(horizon, mid, smoothstep(0.0, 0.28, h));
+          sky = mix(sky, zenith, pow(h, 0.55));
+
+          // Atmospheric limb brightening
+          sky += vec3(0.55, 0.45, 0.25) * pow(1.0 - h, 8.0) * 0.22;
+
+          float disc = smoothstep(0.9992, 0.99985, sunCos);
+          float corona = pow(max(sunCos, 0.0), 48.0) * 0.55;
+          float haze = pow(max(sunCos, 0.0), 8.0) * 0.18;
+          sky += vec3(1.0, 0.93, 0.78) * (disc * 4.2 + corona + haze);
+
+          // High cirrus streaks
+          float cir = noise(dir.xz * 3.5 + uTime * 0.01) * noise(dir.xz * 7.0 - uTime * 0.008);
+          sky += vec3(0.9, 0.93, 1.0) * smoothstep(0.55, 0.85, cir) * pow(h, 1.4) * 0.18;
+
+          gl_FragColor = vec4(sky, 1.0);
+        }
+      `
+    });
+    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(4200, 48, 32), skyMat);
+    scene.add(skyDome);
+
+    // Soft cloud billboards along the corridor
+    const cloudGroup = new THREE.Group();
+    scene.add(cloudGroup);
+    {
+      const cloudGeo = new THREE.SphereGeometry(1, 12, 10);
+      const cloudMat = new THREE.MeshStandardMaterial({
+        color: 0xf4f7fb,
+        roughness: 1,
+        metalness: 0,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false
+      });
+      for (let i = 0; i < 90; i++) {
+        const puff = new THREE.Group();
+        const z = -((i / 90) * TERRAIN_LENGTH + hash2(i, 2) * 80);
+        const x = (hash2(i, 7) - 0.5) * 900;
+        const y = 180 + hash2(i, 11) * 220;
+        const parts = 4 + Math.floor(hash2(i, 13) * 5);
+        for (let p = 0; p < parts; p++) {
+          const m = new THREE.Mesh(cloudGeo, cloudMat);
+          m.position.set((hash2(i, p) - 0.5) * 40, (hash2(i + 3, p) - 0.4) * 14, (hash2(i + 5, p) - 0.5) * 28);
+          const s = 18 + hash2(i, p + 20) * 32;
+          m.scale.set(s * (1.1 + hash2(p, i) * 0.6), s * 0.55, s * (0.9 + hash2(p, 9) * 0.5));
+          puff.add(m);
+        }
+        puff.position.set(x, y, z);
+        cloudGroup.add(puff);
+      }
+    }
+
+    // =========================================================================
+    // TERRAIN ELEVATION
+    // =========================================================================
+    function getTerrainElevation(x, z) {
+      const prog = clamp(-z / TERRAIN_LENGTH);
+      const n = fbm(x * 0.004, z * 0.004, 4);
+      const n2 = fbm(x * 0.012 + 20, z * 0.012, 3);
+
+      if (prog < 0.05) {
+        const d = Math.abs(x);
+        if (d < 22) return 0.02 + noise2(x * 2.0, z * 2.0) * 0.04;
+        const apron = smoothstep(22, 90, d);
+        return (n * 6 + n2 * 2.5) * apron;
+      }
+      if (prog < 0.12) {
+        return n * 8 + n2 * 3.5 + Math.sin(x * 0.02) * 3.5;
+      }
+      if (prog < 0.22) {
+        const valley = Math.pow(Math.abs(x) * 0.013, 2.2) * 18;
+        const riverBed = -smoothstep(18, 0, Math.abs(x - Math.sin(z * 0.01) * 12)) * 6;
+        return valley + n * 12 + riverBed;
+      }
+      if (prog < 0.35) {
+        return Math.sin(x * 0.0075) * 48 + Math.cos(z * 0.0065) * 42 + n * 22 + n2 * 10;
+      }
+      if (prog < 0.52) {
+        let h = (1 - Math.abs(Math.sin((x + z * 0.45) * 0.0048))) * 255;
+        h += (1 - Math.abs(Math.cos((x * 0.65 - z) * 0.0065))) * 190;
+        h += n * 55 + n2 * 25;
+        const carve = Math.min(Math.abs(x) / 130, 1);
+        return h * carve - 8;
+      }
+      if (prog < 0.65) {
+        const cx = x - Math.sin(z * 0.0075) * 85;
+        const canyonW = Math.abs(cx);
+        let wall = Math.min(Math.pow(canyonW * 0.028, 3.6) * 16, 175);
+        wall = Math.floor(wall / 16) * 15.5 + (wall % 16) * 0.35;
+        return wall + n2 * 3.5;
+      }
+      if (prog < 0.76) {
+        return n * 14 + Math.sin(x * 0.0028) * 10 + Math.cos(z * 0.0035) * 7;
+      }
+      if (prog < 0.86) {
+        const dunes = Math.sin(x * 0.014 + z * 0.009) * 28 + Math.sin(x * 0.038 - z * 0.004) * 8;
+        return dunes + n2 * 4;
+      }
+      if (prog < 0.94) {
+        const shore = x * 0.018 + Math.sin(z * 0.009) * 16 + n * 4;
+        return Math.max(-28, shore);
+      }
+      return Math.sin(x * 0.0055) * 36 + Math.cos(z * 0.0055) * 32 + n * 18 + 16;
+    }
+
+    function getBiomeInfo(t) {
+      let normT = t;
+      let isReversed = false;
+      if (t > HALF_DURATION) {
+        normT = TOTAL_DURATION - t;
+        isReversed = true;
+      }
+      let prev = 0;
+      for (let i = 0; i < BIOMES.length; i++) {
+        if (normT <= BIOMES[i].endT) {
+          const local = (normT - prev) / (BIOMES[i].endT - prev);
+          return { ...BIOMES[i], index: i, progress: local, isReversed };
+        }
+        prev = BIOMES[i].endT;
+      }
+      const last = BIOMES[BIOMES.length - 1];
+      return { ...last, index: 9, progress: 1, isReversed };
+    }
+
+    // =========================================================================
+    // TERRAIN MESH + SPLAT SHADER
+    // =========================================================================
+    const terrainMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uSunDir: { value: sunLight.position.clone().normalize() },
+        uLength: { value: TERRAIN_LENGTH },
+        uTime: { value: 0 },
+        uFogColor: { value: new THREE.Color(0x9bb8d8) },
+        uFogDensity: { value: 0.00055 }
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        varying float vSlope;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          vNormal = normalize(mat3(modelMatrix) * normal);
+          vSlope = 1.0 - max(normal.y, 0.0);
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uSunDir;
+        uniform float uLength;
+        uniform float uTime;
+        uniform vec3 uFogColor;
+        uniform float uFogDensity;
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        varying float vSlope;
+
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+        float noise(vec2 p){
+          vec2 i=floor(p), f=fract(p);
+          f=f*f*(3.0-2.0*f);
+          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+                     mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+        }
+        float fbm(vec2 p){
+          float a=0.0, amp=0.5;
+          for(int i=0;i<5;i++){ a+=amp*noise(p); p*=2.07; amp*=0.5; }
+          return a;
+        }
+
+        void main() {
+          vec3 N = normalize(vNormal);
+          vec3 L = normalize(uSunDir);
+          float ndl = max(dot(N, L), 0.0);
+          float wrap = max(dot(N, L) * 0.5 + 0.5, 0.0);
+          float slope = 1.0 - max(N.y, 0.0);
+          float progress = clamp(-vWorldPos.z / uLength, 0.0, 1.0);
+          float n = fbm(vWorldPos.xz * 0.08);
+          float nFine = fbm(vWorldPos.xz * 0.55);
+          float nMacro = fbm(vWorldPos.xz * 0.015);
+
+          // Material library
+          vec3 asphalt = vec3(0.11, 0.115, 0.13) + nFine * 0.03;
+          vec3 concrete = vec3(0.42, 0.43, 0.40);
+          vec3 grassA = vec3(0.22, 0.40, 0.14);
+          vec3 grassB = vec3(0.30, 0.48, 0.16);
+          vec3 dryGrass = vec3(0.40, 0.42, 0.20);
+          vec3 soil = vec3(0.34, 0.26, 0.16);
+          vec3 emerald = vec3(0.16, 0.48, 0.14);
+          vec3 rock = vec3(0.28, 0.28, 0.30) * (0.75 + n * 0.4);
+          vec3 darkRock = vec3(0.14, 0.145, 0.16);
+          vec3 snow = vec3(0.93, 0.96, 1.0);
+          vec3 redRock = vec3(0.62, 0.28, 0.14) + sin(vWorldPos.y * 0.45) * 0.07;
+          vec3 sandstone = vec3(0.72, 0.48, 0.28);
+          vec3 desert = vec3(0.82, 0.68, 0.42) + nFine * 0.05;
+          vec3 dune = vec3(0.90, 0.74, 0.40) + sin(vWorldPos.x * 0.9) * 0.035;
+          vec3 beach = vec3(0.86, 0.80, 0.62);
+          vec3 wetSand = vec3(0.55, 0.50, 0.38);
+          vec3 forestFloor = vec3(0.12, 0.26, 0.11);
+          vec3 moss = vec3(0.18, 0.34, 0.14);
+
+          vec3 col = asphalt;
+
+          if (progress < 0.05) {
+            float ax = abs(vWorldPos.x);
+            if (ax < 9.0 && abs(vWorldPos.z) < 520.0) {
+              // Centerline dashes + edge stripes
+              float dash = step(0.45, fract(vWorldPos.z * 0.05));
+              if (ax < 0.35) col = mix(asphalt, vec3(0.92, 0.90, 0.78), dash);
+              else if (ax > 7.6) col = mix(asphalt, vec3(0.9), 0.85);
+              else col = asphalt + nFine * 0.02;
+            } else if (ax < 26.0) {
+              col = mix(concrete, dryGrass, smoothstep(14.0, 26.0, ax));
+            } else {
+              col = mix(grassA, grassB, n);
+            }
+          } else if (progress < 0.12) {
+            col = mix(mix(grassA, grassB, n), soil, smoothstep(0.35, 0.85, slope + nFine * 0.2));
+            col = mix(col, dryGrass, nMacro * 0.35);
+          } else if (progress < 0.22) {
+            float river = 1.0 - smoothstep(0.0, 14.0, abs(vWorldPos.x - sin(vWorldPos.z * 0.01) * 12.0));
+            col = mix(mix(soil, emerald, n), vec3(0.18, 0.32, 0.22), river * 0.7);
+            col = mix(col, rock, smoothstep(0.45, 0.9, slope));
+          } else if (progress < 0.35) {
+            col = mix(emerald, dryGrass, nMacro * 0.45 + nFine * 0.2);
+            col = mix(col, rock, smoothstep(0.5, 0.92, slope));
+            col = mix(col, soil, smoothstep(0.25, 0.7, 1.0 - n) * 0.25);
+          } else if (progress < 0.52) {
+            float snowMask = smoothstep(0.72, 0.28, slope + nFine * 0.25) * smoothstep(25.0, 105.0, vWorldPos.y);
+            snowMask *= smoothstep(0.0, 0.3, n);
+            col = mix(mix(darkRock, rock, n), snow, snowMask);
+            // scree near snow line
+            col = mix(col, vec3(0.55, 0.55, 0.58), smoothstep(70.0, 95.0, vWorldPos.y) * (1.0 - snowMask) * 0.4);
+          } else if (progress < 0.65) {
+            float band = floor(vWorldPos.y * 0.08);
+            vec3 strata = mix(redRock, sandstone, fract(sin(band) * 45.2) * 0.55);
+            strata += sin(vWorldPos.y * 1.2) * 0.03;
+            col = mix(strata, desert, smoothstep(0.58, 0.65, progress));
+            col = mix(col, darkRock, smoothstep(0.55, 0.95, slope) * 0.5);
+          } else if (progress < 0.76) {
+            col = mix(desert, vec3(0.55, 0.42, 0.28), nMacro * 0.35);
+            col += (nFine - 0.5) * 0.06;
+            col = mix(col, rock, smoothstep(0.55, 0.9, slope) * 0.4);
+          } else if (progress < 0.86) {
+            // Wind ripple micro-detail on dune faces
+            float rip = sin(vWorldPos.x * 4.5 + vWorldPos.z * 1.2) * 0.5 + 0.5;
+            col = dune + (rip - 0.5) * 0.06 * (1.0 - slope);
+            col = mix(col, beach, smoothstep(0.82, 0.86, progress));
+          } else if (progress < 0.94) {
+            if (vWorldPos.y < -1.5) {
+              // Shallow tropical water tint (deep ocean is separate mesh)
+              float depth = clamp((-vWorldPos.y - 1.5) / 20.0, 0.0, 1.0);
+              col = mix(vec3(0.12, 0.48, 0.55), vec3(0.03, 0.18, 0.32), depth);
+            } else {
+              col = mix(wetSand, beach, smoothstep(-1.5, 2.5, vWorldPos.y));
+              col = mix(col, forestFloor, smoothstep(0.90, 0.94, progress));
+            }
+          } else {
+            col = mix(forestFloor, moss, n);
+            col = mix(col, soil, nFine * 0.25);
+            col = mix(col, rock, smoothstep(0.55, 0.92, slope));
+          }
+
+          // Micro albedo breakup
+          col *= 0.92 + nFine * 0.14;
+
+          // Lighting: soft wrap + rim
+          vec3 ambient = col * (0.28 + wrap * 0.18);
+          vec3 diffuse = col * ndl * 0.82;
+          float rim = pow(1.0 - max(dot(N, normalize(uSunDir + vec3(0.0, 0.4, 0.2))), 0.0), 3.0) * 0.08;
+          vec3 lit = ambient + diffuse + vec3(0.55, 0.65, 0.85) * rim;
+
+          // Fake contact AO in depressions
+          lit *= 0.88 + nMacro * 0.18;
+
+          // Height-based cool shade in valleys
+          lit *= mix(vec3(0.92, 0.95, 1.0), vec3(1.0), smoothstep(-5.0, 40.0, vWorldPos.y));
+
+          float dist = length(vWorldPos - cameraPosition);
+          float fogFactor = 1.0 - exp(-uFogDensity * dist);
+          lit = mix(lit, uFogColor, clamp(fogFactor, 0.0, 1.0));
+
+          gl_FragColor = vec4(lit, 1.0);
+        }
+      `
+    });
+
+    const terrainGeo = new THREE.PlaneGeometry(TERRAIN_WIDTH, TERRAIN_LENGTH, 220, 640);
+    terrainGeo.rotateX(-Math.PI / 2);
+    terrainGeo.translate(0, 0, -TERRAIN_LENGTH / 2);
+    {
+      const pos = terrainGeo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        pos.setY(i, getTerrainElevation(pos.getX(i), pos.getZ(i)));
+      }
+      terrainGeo.computeVertexNormals();
+    }
+    const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
+    terrainMesh.receiveShadow = true;
+    scene.add(terrainMesh);
+
+    // =========================================================================
+    // ANIMATED OCEAN SURFACE (coast biome strip)
+    // =========================================================================
+    const oceanMat = new THREE.ShaderMaterial({
+      transparent: true,
+      uniforms: {
+        uTime: { value: 0 },
+        uSunDir: { value: sunLight.position.clone().normalize() },
+        uFogColor: { value: new THREE.Color(0x74c0ea) },
+        uFogDensity: { value: 0.0006 }
+      },
+      vertexShader: `
+        uniform float uTime;
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        void main() {
+          vec3 p = position;
+          float w1 = sin(p.x * 0.08 + uTime * 1.4) * 0.45;
+          float w2 = sin(p.z * 0.11 - uTime * 1.1) * 0.35;
+          float w3 = sin((p.x + p.z) * 0.05 + uTime * 0.7) * 0.55;
+          p.y += w1 + w2 + w3;
+          vec4 wp = modelMatrix * vec4(p, 1.0);
+          vWorldPos = wp.xyz;
+          // Approximate normal from wave grads
+          float dx = cos(p.x * 0.08 + uTime * 1.4) * 0.08 * 0.45 + cos((p.x + p.z) * 0.05 + uTime * 0.7) * 0.05 * 0.55;
+          float dz = cos(p.z * 0.11 - uTime * 1.1) * 0.11 * 0.35 + cos((p.x + p.z) * 0.05 + uTime * 0.7) * 0.05 * 0.55;
+          vNormal = normalize(mat3(modelMatrix) * normalize(vec3(-dx, 1.0, -dz)));
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uSunDir;
+        uniform vec3 uFogColor;
+        uniform float uFogDensity;
+        uniform float uTime;
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        void main() {
+          vec3 N = normalize(vNormal);
+          vec3 L = normalize(uSunDir);
+          vec3 V = normalize(cameraPosition - vWorldPos);
+          float ndl = max(dot(N, L), 0.0);
+          vec3 R = reflect(-L, N);
+          float spec = pow(max(dot(R, V), 0.0), 90.0);
+          float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+          float depth = clamp((-vWorldPos.y) / 22.0, 0.0, 1.0);
+          vec3 shallow = vec3(0.10, 0.55, 0.58);
+          vec3 deep = vec3(0.02, 0.16, 0.30);
+          vec3 col = mix(shallow, deep, depth);
+          col = col * (0.35 + ndl * 0.65) + vec3(0.95, 0.97, 1.0) * spec * 0.85;
+          col = mix(col, vec3(0.75, 0.88, 0.95), fres * 0.55);
+          // foam near shore
+          float foam = smoothstep(-1.0, 0.8, vWorldPos.y) * (0.5 + 0.5 * sin(vWorldPos.x * 2.0 + uTime * 3.0));
+          col = mix(col, vec3(0.92, 0.95, 0.98), foam * 0.35 * (1.0 - depth));
+          float dist = length(vWorldPos - cameraPosition);
+          col = mix(col, uFogColor, 1.0 - exp(-uFogDensity * dist));
+          gl_FragColor = vec4(col, 0.92);
+        }
+      `
+    });
+    const oceanGeo = new THREE.PlaneGeometry(1600, 1800, 80, 100);
+    oceanGeo.rotateX(-Math.PI / 2);
+    const oceanMesh = new THREE.Mesh(oceanGeo, oceanMat);
+    oceanMesh.position.set(220, -4.5, -((0.86 + 0.94) * 0.5 * TERRAIN_LENGTH));
+    scene.add(oceanMesh);
+
+    // River ribbon through valley
+    const riverMat = new THREE.MeshPhysicalMaterial({
+      color: 0x2a6a78,
+      roughness: 0.15,
+      metalness: 0.05,
+      transmission: 0.35,
+      transparent: true,
+      opacity: 0.88,
+      ior: 1.33
+    });
+    const riverPts = [];
+    for (let i = 0; i <= 80; i++) {
+      const z = -(0.12 + (0.10 * i) / 80) * TERRAIN_LENGTH;
+      const x = Math.sin(z * 0.01) * 12;
+      const y = getTerrainElevation(x, z) + 0.4;
+      riverPts.push(new THREE.Vector3(x, y, z));
+    }
+    const riverCurve = new THREE.CatmullRomCurve3(riverPts);
+    const riverGeo = new THREE.TubeGeometry(riverCurve, 160, 7.5, 8, false);
+    const riverMesh = new THREE.Mesh(riverGeo, riverMat);
+    scene.add(riverMesh);
+
+    // =========================================================================
+    // DETAILED ASSET BUILDERS
+    // =========================================================================
+    const _dummy = new THREE.Object3D();
+
+    function makePineTree() {
+      const g = new THREE.Group();
+      const bark = new THREE.MeshStandardMaterial({ color: 0x3a2a1c, roughness: 0.95 });
+      const needleA = new THREE.MeshStandardMaterial({ color: 0x1a3d24, roughness: 0.88 });
+      const needleB = new THREE.MeshStandardMaterial({ color: 0x245230, roughness: 0.86 });
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.32, 3.2, 7), bark);
+      trunk.position.y = 1.5;
+      trunk.castShadow = true;
+      g.add(trunk);
+      for (let i = 0; i < 5; i++) {
+        const h = 2.8 - i * 0.35;
+        const r = 1.9 - i * 0.28;
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 7), i % 2 ? needleA : needleB);
+        cone.position.y = 2.2 + i * 1.05;
+        cone.castShadow = true;
+        g.add(cone);
+      }
+      return g;
+    }
+
+    function makeBroadleaf() {
+      const g = new THREE.Group();
+      const bark = new THREE.MeshStandardMaterial({ color: 0x4a3424, roughness: 0.92 });
+      const leaf = new THREE.MeshStandardMaterial({ color: 0x2f6b2a, roughness: 0.8 });
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.35, 4.0, 8), bark);
+      trunk.position.y = 2.0;
+      trunk.castShadow = true;
+      g.add(trunk);
+      for (let i = 0; i < 6; i++) {
+        const canopy = new THREE.Mesh(new THREE.IcosahedronGeometry(1.4 + (i % 3) * 0.25, 1), leaf);
+        canopy.position.set((i % 3 - 1) * 1.1, 4.2 + (i % 2) * 0.8, ((i / 3) | 0) * 1.0 - 0.5);
+        canopy.scale.set(1.2, 0.9, 1.1);
+        canopy.castShadow = true;
+        g.add(canopy);
+      }
+      return g;
+    }
+
+    function makePalm() {
+      const g = new THREE.Group();
+      const bark = new THREE.MeshStandardMaterial({ color: 0x6b5235, roughness: 0.9 });
+      const frond = new THREE.MeshStandardMaterial({ color: 0x2f8a3a, roughness: 0.75, side: THREE.DoubleSide });
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.28, 7.5, 8), bark);
+      trunk.position.y = 3.7;
+      trunk.rotation.z = 0.08;
+      trunk.castShadow = true;
+      g.add(trunk);
+      for (let i = 0; i < 8; i++) {
+        const blade = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 3.6), frond);
+        blade.position.set(0, 7.3, 0);
+        blade.rotation.order = 'YXZ';
+        blade.rotation.y = (i / 8) * Math.PI * 2;
+        blade.rotation.x = -1.05;
+        g.add(blade);
+      }
+      return g;
+    }
+
+    function makeCactus() {
+      const g = new THREE.Group();
+      const skin = new THREE.MeshStandardMaterial({ color: 0x3f6b3a, roughness: 0.7 });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.42, 3.4, 10), skin);
+      body.position.y = 1.7;
+      body.castShadow = true;
+      g.add(body);
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 1.4, 8), skin);
+      arm.position.set(0.55, 2.2, 0);
+      arm.rotation.z = -0.9;
+      g.add(arm);
+      const armTip = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 1.1, 8), skin);
+      armTip.position.set(1.05, 2.85, 0);
+      g.add(armTip);
+      return g;
+    }
+
+    function makeHouse() {
+      const g = new THREE.Group();
+      const wallCols = [0xc4b49a, 0xd7c3a5, 0xb7c4c2, 0xc9b8a0, 0xaeb9a6];
+      const roofCols = [0x6b3a2e, 0x4a5560, 0x7a4b2e, 0x5c4033];
+      const wall = new THREE.MeshStandardMaterial({
+        color: wallCols[(Math.random() * wallCols.length) | 0],
+        roughness: 0.85
+      });
+      const roof = new THREE.MeshStandardMaterial({
+        color: roofCols[(Math.random() * roofCols.length) | 0],
+        roughness: 0.75
+      });
+      const trim = new THREE.MeshStandardMaterial({ color: 0xf2efe8, roughness: 0.6 });
+      const glass = new THREE.MeshStandardMaterial({ color: 0x7ec8e3, roughness: 0.2, metalness: 0.3 });
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(7.2, 4.4, 8.4), wall);
+      body.position.y = 2.2;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      g.add(body);
+
+      // Pitched roof
+      const roofShape = new THREE.ConeGeometry(6.2, 2.8, 4);
+      const roofMesh = new THREE.Mesh(roofShape, roof);
+      roofMesh.position.y = 5.6;
+      roofMesh.rotation.y = Math.PI / 4;
+      roofMesh.scale.set(1.15, 1, 1.35);
+      roofMesh.castShadow = true;
+      g.add(roofMesh);
+
+      // Chimney
+      const chim = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.6, 0.7), new THREE.MeshStandardMaterial({ color: 0x6d4c41, roughness: 0.9 }));
+      chim.position.set(1.8, 6.4, -1.2);
+      g.add(chim);
+
+      // Door
+      const door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.1, 0.12), new THREE.MeshStandardMaterial({ color: 0x4e342e, roughness: 0.7 }));
+      door.position.set(0, 1.05, 4.22);
+      g.add(door);
+
+      // Windows
+      for (const wx of [-2.2, 2.2]) {
+        const win = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.1, 0.1), glass);
+        win.position.set(wx, 2.5, 4.22);
+        g.add(win);
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(1.35, 1.25, 0.08), trim);
+        frame.position.set(wx, 2.5, 4.18);
+        g.add(frame);
+      }
+      return g;
+    }
+
+    function makeHangar() {
+      const g = new THREE.Group();
+      const metal = new THREE.MeshStandardMaterial({ color: 0x8a939c, metalness: 0.55, roughness: 0.45 });
+      const dark = new THREE.MeshStandardMaterial({ color: 0x3a4048, metalness: 0.4, roughness: 0.55 });
+      const arch = new THREE.Mesh(new THREE.CylinderGeometry(10, 10, 28, 20, 1, false, 0, Math.PI), metal);
+      arch.rotation.z = Math.PI / 2;
+      arch.rotation.y = Math.PI / 2;
+      arch.position.set(0, 0, 0);
+      arch.scale.set(1, 1, 1.4);
+      arch.position.y = 0.2;
+      arch.castShadow = true;
+      g.add(arch);
+      const floor = new THREE.Mesh(new THREE.BoxGeometry(22, 0.3, 32), dark);
+      floor.position.y = 0.1;
+      g.add(floor);
+      const door = new THREE.Mesh(new THREE.BoxGeometry(14, 8, 0.4), dark);
+      door.position.set(0, 4, 15.5);
+      g.add(door);
+      return g;
+    }
+
+    function makeRock() {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0x6a5a4e, roughness: 0.95 });
+      const core = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2, 0), mat);
+      core.scale.set(1.4, 0.9, 1.1);
+      core.castShadow = true;
+      g.add(core);
+      return g;
+    }
+
+    function makeCanyonSpire() {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0xa85a32, roughness: 0.9 });
+      const h = 28 + Math.random() * 40;
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(2.5 + Math.random(), 5 + Math.random() * 3, h, 7), mat);
+      mesh.position.y = h * 0.5;
+      mesh.castShadow = true;
+      g.add(mesh);
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(3.2, 6, 6), new THREE.MeshStandardMaterial({ color: 0xc47a45, roughness: 0.88 }));
+      cap.position.y = h + 2;
+      g.add(cap);
+      return g;
+    }
+
+    // Place assets
+    const worldProps = new THREE.Group();
+    scene.add(worldProps);
+
+    // Airfield hangar + windsock pole
+    {
+      const hangar = makeHangar();
+      hangar.position.set(55, getTerrainElevation(55, -80), -80);
+      hangar.rotation.y = -0.2;
+      worldProps.add(hangar);
+
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.7, roughness: 0.3 });
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 8, 8), poleMat);
+      pole.position.set(-30, 4, -40);
+      worldProps.add(pole);
+      const sock = new THREE.Mesh(
+        new THREE.ConeGeometry(0.45, 2.2, 8, 1, true),
+        new THREE.MeshStandardMaterial({ color: 0xd64545, side: THREE.DoubleSide, roughness: 0.7 })
+      );
+      sock.rotation.z = Math.PI / 2;
+      sock.position.set(-28.7, 7.6, -40);
+      worldProps.add(sock);
+
+      // Runway edge lights
+      const lightMat = new THREE.MeshStandardMaterial({ color: 0xf5f0d8, emissive: 0xfff2b0, emissiveIntensity: 0.6 });
+      for (let i = 0; i < 40; i++) {
+        const z = -i * 22;
+        for (const side of [-9.5, 9.5]) {
+          const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), lightMat);
+          lamp.position.set(side, 0.35, z);
+          worldProps.add(lamp);
+        }
+      }
+    }
+
+    // Town houses
+    for (let i = 0; i < 55; i++) {
+      const z = -(600 + Math.random() * 750);
+      const x = (Math.random() - 0.5) * 320;
+      if (Math.abs(x) < 28) continue;
+      const house = makeHouse();
+      const y = getTerrainElevation(x, z);
+      house.position.set(x, y, z);
+      house.rotation.y = ((Math.random() * 4) | 0) * (Math.PI / 2);
+      const s = 0.75 + Math.random() * 0.45;
+      house.scale.setScalar(s);
+      worldProps.add(house);
+    }
+
+    // Church / landmark
+    {
+      const church = makeHouse();
+      church.scale.set(1.2, 1.4, 1.2);
+      const steeple = new THREE.Mesh(
+        new THREE.ConeGeometry(1.2, 5, 4),
+        new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.7 })
+      );
+      steeple.position.set(0, 9.5, 0);
+      church.add(steeple);
+      church.position.set(-70, getTerrainElevation(-70, -950), -950);
+      worldProps.add(church);
+    }
+
+    // Pines — valley / hills / alpine treeline / forest
+    for (let i = 0; i < 900; i++) {
+      const z = -(200 + Math.random() * (TERRAIN_LENGTH - 400));
+      const prog = -z / TERRAIN_LENGTH;
+      const inGreen = (prog > 0.08 && prog < 0.38) || (prog > 0.38 && prog < 0.48 && Math.random() > 0.55) || prog > 0.90;
+      if (!inGreen) continue;
+      const x = (Math.random() - 0.5) * TERRAIN_WIDTH * 0.55;
+      if (Math.abs(x) < 18 && prog < 0.25) continue;
+      const y = getTerrainElevation(x, z);
+      if (prog > 0.38 && prog < 0.52 && y > 120) continue;
+      const tree = Math.random() > 0.35 ? makePineTree() : makeBroadleaf();
+      tree.position.set(x, y, z);
+      tree.rotation.y = Math.random() * Math.PI * 2;
+      tree.scale.setScalar(0.7 + Math.random() * 1.1);
+      worldProps.add(tree);
+    }
+
+    // Canyon spires
+    for (let i = 0; i < 45; i++) {
+      const z = -(0.52 + Math.random() * 0.12) * TERRAIN_LENGTH;
+      const side = Math.random() > 0.5 ? 1 : -1;
+      const x = side * (40 + Math.random() * 220);
+      const spire = makeCanyonSpire();
+      spire.position.set(x, getTerrainElevation(x, z), z);
+      spire.scale.setScalar(0.7 + Math.random() * 0.8);
+      worldProps.add(spire);
+    }
+
+    // Desert rocks + cacti
+    for (let i = 0; i < 120; i++) {
+      const z = -(0.65 + Math.random() * 0.2) * TERRAIN_LENGTH;
+      const x = (Math.random() - 0.5) * 700;
+      const y = getTerrainElevation(x, z);
+      if (Math.random() > 0.45) {
+        const c = makeCactus();
+        c.position.set(x, y, z);
+        c.scale.setScalar(0.8 + Math.random() * 1.2);
+        worldProps.add(c);
+      } else {
+        const r = makeRock();
+        r.position.set(x, y + 0.4, z);
+        r.scale.setScalar(1.5 + Math.random() * 3);
+        r.rotation.set(Math.random(), Math.random(), Math.random());
+        worldProps.add(r);
+      }
+    }
+
+    // Coastal palms
+    for (let i = 0; i < 70; i++) {
+      const z = -(0.86 + Math.random() * 0.07) * TERRAIN_LENGTH;
+      const x = -40 + Math.random() * 160;
+      const y = getTerrainElevation(x, z);
+      if (y < -1) continue;
+      const palm = makePalm();
+      palm.position.set(x, y, z);
+      palm.rotation.y = Math.random() * Math.PI;
+      palm.scale.setScalar(0.85 + Math.random() * 0.6);
+      worldProps.add(palm);
+    }
+
+    // =========================================================================
+    // ULTRA-DETAILED SUPER CUB
+    // =========================================================================
+    function buildSuperCub() {
+      const plane = new THREE.Group();
+
+      const yellow = new THREE.MeshPhysicalMaterial({
+        color: 0xf0a020,
+        metalness: 0.08,
+        roughness: 0.32,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.12
+      });
+      const yellowDark = new THREE.MeshPhysicalMaterial({
+        color: 0xd4890f,
+        metalness: 0.1,
+        roughness: 0.4,
+        clearcoat: 0.8,
+        clearcoatRoughness: 0.2
+      });
+      const white = new THREE.MeshPhysicalMaterial({
+        color: 0xf4f6f8,
+        metalness: 0.05,
+        roughness: 0.38,
+        clearcoat: 0.6,
+        clearcoatRoughness: 0.25
+      });
+      const rubber = new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.95 });
+      const chrome = new THREE.MeshStandardMaterial({ color: 0xdce3ea, metalness: 0.95, roughness: 0.18 });
+      const alum = new THREE.MeshStandardMaterial({ color: 0xb8c0c8, metalness: 0.85, roughness: 0.35 });
+      const glass = new THREE.MeshPhysicalMaterial({
+        color: 0x1a2838,
+        metalness: 0.05,
+        roughness: 0.05,
+        transmission: 0.82,
+        transparent: true,
+        opacity: 1,
+        ior: 1.45,
+        thickness: 0.15
+      });
+      const interior = new THREE.MeshStandardMaterial({ color: 0x2a241e, roughness: 0.9 });
+      const redNav = new THREE.MeshStandardMaterial({ color: 0xff2020, emissive: 0xff0000, emissiveIntensity: 0.8 });
+      const greenNav = new THREE.MeshStandardMaterial({ color: 0x20ff60, emissive: 0x00ff40, emissiveIntensity: 0.8 });
+
+      // Fuselage — multi-section tapered tube
+      const fuseGroup = new THREE.Group();
+      const sections = [
+        { r1: 0.42, r2: 0.50, len: 0.7, z: 2.15, mat: alum },       // firewall / cowling rear
+        { r1: 0.50, r2: 0.52, len: 1.5, z: 1.05, mat: yellow },     // cabin
+        { r1: 0.52, r2: 0.38, len: 1.4, z: -0.4, mat: yellow },     // mid
+        { r1: 0.38, r2: 0.22, len: 1.6, z: -1.9, mat: yellowDark }  // tail cone
+      ];
+      sections.forEach((s) => {
+        const geo = new THREE.CylinderGeometry(s.r2, s.r1, s.len, 20, 1);
+        geo.rotateX(Math.PI / 2);
+        const m = new THREE.Mesh(geo, s.mat);
+        m.position.z = s.z;
+        m.scale.set(0.92, 1.18, 1);
+        m.castShadow = true;
+        fuseGroup.add(m);
+      });
+      plane.add(fuseGroup);
+
+      // Fabric stringer suggestion lines
+      for (let i = 0; i < 6; i++) {
+        const line = new THREE.Mesh(
+          new THREE.BoxGeometry(0.015, 0.9, 3.8),
+          new THREE.MeshStandardMaterial({ color: 0xc88810, roughness: 0.5 })
+        );
+        const a = (i / 6) * Math.PI * 2;
+        line.position.set(Math.cos(a) * 0.48, Math.sin(a) * 0.58, 0.1);
+        plane.add(line);
+      }
+
+      // Engine cowling + spinner
+      const cowl = new THREE.Mesh(new THREE.SphereGeometry(0.55, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.65), alum);
+      cowl.rotation.x = Math.PI / 2;
+      cowl.position.set(0, 0.05, 2.55);
+      cowl.scale.set(0.95, 1.05, 1.15);
+      cowl.castShadow = true;
+      plane.add(cowl);
+
+      // Cooling gills
+      for (let i = 0; i < 7; i++) {
+        const gill = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.04, 0.08), chrome);
+        gill.position.set(0, -0.15 - i * 0.07, 2.35);
+        plane.add(gill);
+      }
+
+      const spinner = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), chrome);
+      spinner.position.set(0, 0.05, 3.15);
+      spinner.scale.set(1, 1, 1.4);
+      plane.add(spinner);
+
+      // Exhaust
+      const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.9, 8), alum);
+      exhaust.rotation.z = Math.PI / 2;
+      exhaust.rotation.y = 0.4;
+      exhaust.position.set(0.45, -0.35, 2.1);
+      plane.add(exhaust);
+
+      // Wings — airfoil-ish via scaled box + leading edge
+      const wingGroup = new THREE.Group();
+      wingGroup.position.set(0, 0.92, 0.35);
+      const wingMain = new THREE.Mesh(new THREE.BoxGeometry(10.2, 0.12, 1.55), white);
+      wingMain.castShadow = true;
+      wingGroup.add(wingMain);
+      const leading = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 10.2, 10), white);
+      leading.rotation.z = Math.PI / 2;
+      leading.position.set(0, 0.01, 0.72);
+      wingGroup.add(leading);
+      const trailing = new THREE.Mesh(new THREE.BoxGeometry(10.0, 0.04, 0.35), white);
+      trailing.position.set(0, -0.02, -0.85);
+      wingGroup.add(trailing);
+      // Wing tips
+      for (const side of [-1, 1]) {
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), white);
+        tip.position.set(side * 5.1, 0, 0);
+        tip.scale.set(0.5, 0.7, 3.5);
+        wingGroup.add(tip);
+        const nav = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), side < 0 ? redNav : greenNav);
+        nav.position.set(side * 5.15, 0.02, 0.5);
+        wingGroup.add(nav);
+      }
+      // Ribs
+      for (let i = -4; i <= 4; i++) {
+        if (i === 0) continue;
+        const rib = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 1.4), new THREE.MeshStandardMaterial({ color: 0xe8ecf0, roughness: 0.5 }));
+        rib.position.set(i * 1.05, 0.02, 0);
+        wingGroup.add(rib);
+      }
+      plane.add(wingGroup);
+
+      // Struts + jury struts
+      function addStrut(x0, y0, z0, x1, y1, z1) {
+        const a = new THREE.Vector3(x0, y0, z0);
+        const b = new THREE.Vector3(x1, y1, z1);
+        const dir = b.clone().sub(a);
+        const len = dir.length();
+        const mid = a.clone().add(b).multiplyScalar(0.5);
+        const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, len, 8), chrome);
+        strut.position.copy(mid);
+        strut.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+        strut.castShadow = true;
+        plane.add(strut);
+      }
+      addStrut(-1.1, 0.15, 0.5, -3.6, 0.85, 0.5);
+      addStrut(1.1, 0.15, 0.5, 3.6, 0.85, 0.5);
+      addStrut(-1.1, 0.15, 0.1, -3.2, 0.85, 0.1);
+      addStrut(1.1, 0.15, 0.1, 3.2, 0.85, 0.1);
+      addStrut(-3.6, 0.85, 0.5, -3.6, 0.85, -0.2);
+      addStrut(3.6, 0.85, 0.5, 3.6, 0.85, -0.2);
+      // Cabane struts
+      addStrut(-0.35, 0.55, 0.9, -0.9, 0.92, 0.5);
+      addStrut(0.35, 0.55, 0.9, 0.9, 0.92, 0.5);
+
+      // Cockpit canopy with frames
+      const canopy = new THREE.Group();
+      canopy.position.set(0, 0.62, 0.85);
+      const canopyGlass = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.62, 1.65), glass);
+      canopy.add(canopyGlass);
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0x222428, roughness: 0.5, metalness: 0.4 });
+      for (let i = 0; i < 4; i++) {
+        const f = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.64, 0.04), frameMat);
+        f.position.set(0, 0, -0.7 + i * 0.45);
+        canopy.add(f);
+      }
+      const sill = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.05, 1.7), frameMat);
+      sill.position.y = -0.3;
+      canopy.add(sill);
+      // Seats hint
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.35, 0.4), interior);
+      seat.position.set(0, -0.15, 0.2);
+      canopy.add(seat);
+      plane.add(canopy);
+
+      // Horizontal stabilizer + elevator
+      const hStab = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.07, 0.85), white);
+      hStab.position.set(0, 0.32, -2.55);
+      hStab.castShadow = true;
+      plane.add(hStab);
+      const elev = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.05, 0.28), white);
+      elev.position.set(0, 0.32, -3.05);
+      plane.add(elev);
+
+      // Vertical fin + rudder
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.35, 1.15), yellow);
+      fin.position.set(0, 0.95, -2.35);
+      fin.rotation.x = -0.35;
+      fin.castShadow = true;
+      plane.add(fin);
+      const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.1, 0.35), yellowDark);
+      rudder.position.set(0, 1.0, -2.95);
+      rudder.rotation.x = -0.2;
+      plane.add(rudder);
+
+      // Landing gear — tundra tires
+      const gear = new THREE.Group();
+      const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.1, 8), chrome);
+      axle.rotation.z = Math.PI / 2;
+      axle.position.set(0, -0.55, 0.85);
+      gear.add(axle);
+      for (const side of [-1, 1]) {
+        // Gear leg
+        addStrut(side * 0.35, -0.1, 0.55, side * 0.95, -0.7, 0.9);
+        const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.38, 20), rubber);
+        tire.rotation.z = Math.PI / 2;
+        tire.position.set(side * 1.05, -0.82, 0.9);
+        tire.castShadow = true;
+        gear.add(tire);
+        // Tread rings
+        for (let t = 0; t < 5; t++) {
+          const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(0.52, 0.025, 6, 20),
+            new THREE.MeshStandardMaterial({ color: 0x0d0d0e, roughness: 1 })
+          );
+          ring.rotation.y = Math.PI / 2;
+          ring.position.set(side * (0.92 + t * 0.06), -0.82, 0.9);
+          gear.add(ring);
+        }
+        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.42, 12), alum);
+        hub.rotation.z = Math.PI / 2;
+        hub.position.set(side * 1.05, -0.82, 0.9);
+        gear.add(hub);
+      }
+      // Tailwheel
+      const tw = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.1, 12), rubber);
+      tw.rotation.z = Math.PI / 2;
+      tw.position.set(0, -0.25, -2.7);
+      gear.add(tw);
+      const twLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 6), chrome);
+      twLeg.position.set(0, -0.05, -2.55);
+      twLeg.rotation.x = 0.5;
+      gear.add(twLeg);
+      plane.add(gear);
+
+      // Propeller assembly
+      const propGroup = new THREE.Group();
+      propGroup.position.set(0, 0.05, 3.22);
+      const hubProp = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.15, 10), chrome);
+      hubProp.rotation.x = Math.PI / 2;
+      propGroup.add(hubProp);
+      for (const ang of [0, Math.PI]) {
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.85, 0.035), rubber);
+        blade.position.y = 0.85;
+        blade.rotation.z = 0.25;
+        const holder = new THREE.Group();
+        holder.rotation.z = ang;
+        holder.add(blade);
+        // Blade twist approx
+        const tip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, 0.025), rubber);
+        tip.position.set(0.04, 1.55, 0);
+        tip.rotation.z = 0.15;
+        holder.add(tip);
+        propGroup.add(holder);
+      }
+      const blur = new THREE.Mesh(
+        new THREE.CircleGeometry(1.05, 32),
+        new THREE.MeshBasicMaterial({ color: 0xa8b4c0, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
+      );
+      propGroup.add(blur);
+      plane.add(propGroup);
+      plane.userData.propGroup = propGroup;
+
+      // Registration mark (canvas texture)
+      const regCanvas = document.createElement('canvas');
+      regCanvas.width = 256;
+      regCanvas.height = 64;
+      const ctx = regCanvas.getContext('2d');
+      ctx.clearRect(0, 0, 256, 64);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.font = 'bold 36px Helvetica, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('N248CUB', 128, 42);
+      const regTex = new THREE.CanvasTexture(regCanvas);
+      const regMat = new THREE.MeshBasicMaterial({ map: regTex, transparent: true });
+      const reg = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35), regMat);
+      reg.position.set(0.52, 0.15, -0.6);
+      reg.rotation.y = Math.PI / 2;
+      plane.add(reg);
+      const reg2 = reg.clone();
+      reg2.position.x = -0.52;
+      reg2.rotation.y = -Math.PI / 2;
+      plane.add(reg2);
+
+      return plane;
+    }
+
+    const bushPlane = buildSuperCub();
+    bushPlane.scale.setScalar(2.15);
+    scene.add(bushPlane);
+
+    // Shadow follower light target sticks near plane
+    const shadowHelperTarget = new THREE.Object3D();
+    scene.add(shadowHelperTarget);
+    sunLight.target = shadowHelperTarget;
+
+    // Atmospheric particles (dust / spray / snow) — lightweight points
+    const particleCount = 1200;
+    const particleGeo = new THREE.BufferGeometry();
+    const particlePos = new Float32Array(particleCount * 3);
+    for (let i = 0; i < particleCount; i++) {
+      particlePos[i * 3] = (Math.random() - 0.5) * 120;
+      particlePos[i * 3 + 1] = Math.random() * 40;
+      particlePos[i * 3 + 2] = (Math.random() - 0.5) * 120;
+    }
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
+    const particleMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.55,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      sizeAttenuation: true
+    });
+    const particles = new THREE.Points(particleGeo, particleMat);
+    scene.add(particles);
+
+    // =========================================================================
+    // FLIGHT KINEMATICS
+    // =========================================================================
+    function computeFlightState(t) {
+      let normProg;
+      let isReturn = false;
+      if (t <= HALF_DURATION) normProg = t / HALF_DURATION;
+      else {
+        normProg = 1 - (t - HALF_DURATION) / HALF_DURATION;
+        isReturn = true;
+      }
+
+      const z = -normProg * (TERRAIN_LENGTH - 400);
+      let x = Math.sin(normProg * Math.PI * 6) * 120 + Math.cos(normProg * Math.PI * 2) * 40;
+      if (t < 14 || t > TOTAL_DURATION - 14) x = 0;
+
+      const groundH = getTerrainElevation(x, z);
+      let clearance = 55;
+      if (t < 7) clearance = 1.15;
+      else if (t < 14) clearance = 1.15 + ((t - 7) / 7) * 48;
+      else if (t > TOTAL_DURATION - 7) clearance = 1.15;
+      else if (t > TOTAL_DURATION - 14) clearance = 1.15 + ((TOTAL_DURATION - t) / 7) * 48;
+      else {
+        clearance = 48 + Math.sin(normProg * Math.PI * 4) * 28;
+        if (normProg > 0.35 && normProg < 0.52) clearance = 95;
+        if (normProg > 0.86 && normProg < 0.94) clearance = 38;
+      }
+
+      const y = groundH + clearance;
+      let airspeed = 88;
+      let rpm = 0.78;
+      if (t < 7) {
+        airspeed = (t / 7) * 58;
+        rpm = 1;
+      } else if (t < 14) {
+        airspeed = 58 + ((t - 7) / 7) * 30;
+        rpm = 0.95;
+      } else if (t > TOTAL_DURATION - 7) {
+        airspeed = ((TOTAL_DURATION - t) / 7) * 42;
+        rpm = 0.18;
+      } else if (t > TOTAL_DURATION - 14) {
+        airspeed = 42 + ((TOTAL_DURATION - t - 7) / 7) * 40;
+        rpm = 0.35;
+      }
+
+      return {
+        pos: new THREE.Vector3(x, y, z),
+        airspeed,
+        rpm,
+        groundH,
+        isReturn,
+        normProg
+      };
+    }
+
+    // =========================================================================
+    // AUDIO — flight_journey.mp3 (user-supplied)
+    // =========================================================================
+    const audioEl = document.getElementById('journey-audio');
+    audioEl.volume = 0.85;
+    let audioReady = false;
+
+    function syncAudio(t) {
+      if (!audioReady) return;
+      // Keep media clock near simulation clock (tolerate short drift)
+      if (Math.abs(audioEl.currentTime - t) > 0.45) {
+        try { audioEl.currentTime = t % (audioEl.duration || TOTAL_DURATION); } catch (_) {}
+      }
+    }
+
+    async function tryPlayAudio() {
+      try {
+        await audioEl.play();
+        audioReady = true;
+      } catch (_) {
+        audioReady = false;
+      }
+    }
+
+    // Silent unlock — no UI; any gesture resumes audio if autoplay blocked
+    const unlock = () => { tryPlayAudio(); };
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock);
+    tryPlayAudio();
+
+    // Optional seek via ?t= for verification tooling
+    const urlT = new URLSearchParams(location.search).get('t');
+    let currentFlightTime = urlT ? clamp(parseFloat(urlT), 0, TOTAL_DURATION) : 0;
+    if (urlT) {
+      audioEl.addEventListener('loadedmetadata', () => {
+        try { audioEl.currentTime = currentFlightTime; } catch (_) {}
+      });
+    }
+
+    // Expose for headless verification
+    window.__flight = {
+      setTime: (t) => { currentFlightTime = clamp(t, 0, TOTAL_DURATION); },
+      getTime: () => currentFlightTime,
+      getBiome: () => getBiomeInfo(currentFlightTime).name
+    };
+
+    // =========================================================================
+    // CHASE CAMERA
+    // =========================================================================
+    const chasePos = new THREE.Vector3();
+    const chaseLook = new THREE.Vector3();
+    const camVel = new THREE.Vector3();
+
+    function updateChaseCam(planePos, planeQuat, isReturn, dt) {
+      const back = isReturn ? 22 : -22;
+      const desiredOffset = new THREE.Vector3(0.8, 6.2, back);
+      desiredOffset.applyQuaternion(planeQuat);
+      const desired = planePos.clone().add(desiredOffset);
+
+      // Smooth damp
+      chasePos.lerp(desired, 1 - Math.exp(-3.2 * dt));
+      camera.position.copy(chasePos);
+
+      const lookAhead = new THREE.Vector3(0, 1.8, isReturn ? -14 : 14);
+      lookAhead.applyQuaternion(planeQuat);
+      chaseLook.lerp(planePos.clone().add(lookAhead), 1 - Math.exp(-4.0 * dt));
+      camera.lookAt(chaseLook);
+
+      // Keep shadow map focused on aircraft
+      shadowHelperTarget.position.copy(planePos);
+      sunLight.position.set(
+        planePos.x + 180,
+        planePos.y + 320,
+        planePos.z - 120
+      );
+    }
+
+    // =========================================================================
+    // MAIN LOOP
+    // =========================================================================
+    const clock = new THREE.Clock();
+    let pausedForSeek = !!urlT && new URLSearchParams(location.search).has('pause');
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.08);
+      const tAbs = clock.elapsedTime;
+
+      if (!pausedForSeek) {
+        if (audioReady && !audioEl.paused && audioEl.duration && isFinite(audioEl.duration)) {
+          currentFlightTime = audioEl.currentTime % TOTAL_DURATION;
+        } else {
+          currentFlightTime += dt;
+          if (currentFlightTime > TOTAL_DURATION) currentFlightTime = 0;
+        }
+      }
+
+      const state = computeFlightState(currentFlightTime);
+      const lookAheadT = state.isReturn ? -0.18 : 0.18;
+      const next = computeFlightState(clamp(currentFlightTime + lookAheadT, 0, TOTAL_DURATION));
+
+      const vibX = Math.sin(tAbs * 14.0) * 0.035 * state.rpm;
+      const vibY = Math.cos(tAbs * 17.0) * 0.03 * state.rpm;
+      bushPlane.position.copy(state.pos).add(new THREE.Vector3(vibX, vibY, 0));
+      bushPlane.lookAt(next.pos);
+
+      // Bank into turns from path curvature
+      const prev = computeFlightState(clamp(currentFlightTime - 0.2, 0, TOTAL_DURATION));
+      const curv = (state.pos.x - prev.pos.x) - (next.pos.x - state.pos.x);
+      const bank = clamp(curv * 0.08, -0.55, 0.55);
+      bushPlane.rotateZ(bank * (state.isReturn ? -1 : 1));
+
+      bushPlane.userData.propGroup.rotation.z += (0.4 + state.rpm * 1.1);
+
+      // Atmosphere
+      const biome = getBiomeInfo(currentFlightTime);
+      skyMat.uniforms.uSkyColor.value.set(biome.sky[0], biome.sky[1], biome.sky[2]);
+      skyMat.uniforms.uTime.value = tAbs;
+      scene.fog.color.setHex(biome.fog);
+      scene.fog.density = biome.dens;
+      terrainMat.uniforms.uFogColor.value.copy(scene.fog.color);
+      terrainMat.uniforms.uFogDensity.value = biome.dens;
+      terrainMat.uniforms.uTime.value = tAbs;
+      oceanMat.uniforms.uTime.value = tAbs;
+      oceanMat.uniforms.uFogColor.value.copy(scene.fog.color);
+      sunLight.intensity = biome.sun;
+      hemiLight.intensity = biome.index >= 5 && biome.index <= 7 ? 0.55 : 0.72;
+      bloomPass.strength = biome.index === 4 ? 0.22 : 0.28;
+
+      // Particle styling per biome
+      particles.position.copy(state.pos);
+      if (biome.index === 4) {
+        particleMat.color.setHex(0xe8f2ff);
+        particleMat.opacity = 0.4;
+        particleMat.size = 0.45;
+      } else if (biome.index >= 5 && biome.index <= 7) {
+        particleMat.color.setHex(0xe6c896);
+        particleMat.opacity = 0.28;
+        particleMat.size = 0.7;
+      } else if (biome.index === 8) {
+        particleMat.color.setHex(0xd8f0ff);
+        particleMat.opacity = 0.3;
+        particleMat.size = 0.5;
+      } else {
+        particleMat.opacity = 0.08;
+      }
+      const pArr = particleGeo.attributes.position.array;
+      for (let i = 0; i < particleCount; i++) {
+        pArr[i * 3 + 1] -= dt * (0.8 + (i % 5) * 0.15);
+        pArr[i * 3] += Math.sin(tAbs + i) * 0.02;
+        if (pArr[i * 3 + 1] < -5) {
+          pArr[i * 3] = (Math.random() - 0.5) * 120;
+          pArr[i * 3 + 1] = 10 + Math.random() * 50;
+          pArr[i * 3 + 2] = (Math.random() - 0.5) * 120;
+        }
+      }
+      particleGeo.attributes.position.needsUpdate = true;
+
+      // Soft grade warmth in desert/canyon
+      gradeShader.uniforms.uWarm.value = (biome.index >= 5 && biome.index <= 7) ? 0.14 : 0.05;
+
+      updateChaseCam(bushPlane.position, bushPlane.quaternion, state.isReturn, dt);
+      syncAudio(currentFlightTime);
+
+      skyDome.position.copy(camera.position);
+      composer.render();
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>
