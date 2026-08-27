@@ -18,6 +18,31 @@
       width: 100vw;
       height: 100vh;
     }
+    #start-gate {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(ellipse at center, rgba(2,8,18,0.55), rgba(2,6,12,0.88));
+      color: #e8eef6;
+      font: 500 15px/1.45 "Segoe UI", system-ui, sans-serif;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.45s ease;
+    }
+    #start-gate.hide {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #start-gate span {
+      padding: 14px 22px;
+      border: 1px solid rgba(232,238,246,0.35);
+      border-radius: 999px;
+      background: rgba(8,16,28,0.45);
+      backdrop-filter: blur(8px);
+    }
   </style>
   <script type="importmap">
   {
@@ -29,7 +54,8 @@
   </script>
 </head>
 <body>
-  <audio id="journey-audio" src="flight_journey.mp3" preload="auto" loop></audio>
+  <audio id="journey-audio" src="flight_journey.mp3" preload="auto" loop playsinline></audio>
+  <div id="start-gate"><span>Click to start flight</span></div>
   <script type="module">
     import * as THREE from 'three';
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -43,6 +69,9 @@
     // =========================================================================
     const TOTAL_DURATION = 266.0;
     const HALF_DURATION = 133.0;
+    const OUT_END = 125.0;          // arrive at far forest
+    const TURN_DUR = 16.0;          // banked 180° turnaround
+    const TURN_END = OUT_END + TURN_DUR;
     const TERRAIN_LENGTH = 14000;
     const TERRAIN_WIDTH = 3200;
 
@@ -330,12 +359,18 @@
     }
 
     function getBiomeInfo(t) {
-      let normT = t;
+      let normT;
       let isReversed = false;
-      if (t > HALF_DURATION) {
-        normT = TOTAL_DURATION - t;
+      if (t <= OUT_END) {
+        normT = (t / OUT_END) * HALF_DURATION;
+      } else if (t <= TURN_END) {
+        normT = HALF_DURATION;
+      } else {
         isReversed = true;
+        const u = (t - TURN_END) / Math.max(TOTAL_DURATION - TURN_END, 0.001);
+        normT = (1 - clamp(u)) * HALF_DURATION;
       }
+
       let prev = 0;
       for (let i = 0; i < BIOMES.length; i++) {
         if (normT <= BIOMES[i].endT) {
@@ -1256,52 +1291,90 @@
     scene.add(particles);
 
     // =========================================================================
-    // FLIGHT KINEMATICS
+    // FLIGHT KINEMATICS — outbound, visible U-turn, then fly home
     // =========================================================================
+    function pathAtProgress(normProg) {
+      const p = clamp(normProg);
+      const z = -p * (TERRAIN_LENGTH - 400);
+      let x = Math.sin(p * Math.PI * 2.0) * 52.0 + Math.cos(p * Math.PI * 0.85) * 16.0;
+      if (p > 0.84 && p < 0.95) x = lerp(x, 130, smoothstep(0.84, 0.90, p));
+      if (p < 0.02 || p > 0.985) x = lerp(x, 0, p < 0.02 ? 1 - p / 0.02 : (p - 0.985) / 0.015);
+      return { x, z };
+    }
+
+    function clearanceAt(t, normProg, isTurn) {
+      if (t < 7) return 1.2;
+      if (t < 14) return 1.2 + ((t - 7) / 7) * 46;
+      if (t > TOTAL_DURATION - 7) return 1.2;
+      if (t > TOTAL_DURATION - 14) return 1.2 + ((TOTAL_DURATION - t) / 7) * 46;
+      if (isTurn) return 70;
+      let c = 50 + Math.sin(normProg * Math.PI * 2.0) * 16;
+      if (normProg > 0.35 && normProg < 0.52) c = 70;
+      if (normProg > 0.52 && normProg < 0.68) c = 82;
+      if (normProg > 0.86 && normProg < 0.94) c = 30;
+      return c;
+    }
+
+    // Precompute turn geometry at forest terminus
+    const _turnEndXZ = pathAtProgress(1);
+    const _turnPrevXZ = pathAtProgress(0.985);
+    const _arriveDir = new THREE.Vector3(
+      _turnEndXZ.x - _turnPrevXZ.x,
+      0,
+      _turnEndXZ.z - _turnPrevXZ.z
+    ).normalize();
+    // Left-hand turn center
+    const TURN_RADIUS = 110;
+    const _turnCenter = new THREE.Vector3(
+      _turnEndXZ.x - _arriveDir.z * TURN_RADIUS,
+      0,
+      _turnEndXZ.z + _arriveDir.x * TURN_RADIUS
+    );
+    const _turnStartAng = Math.atan2(
+      _turnEndXZ.x - _turnCenter.x,
+      _turnEndXZ.z - _turnCenter.z
+    );
+
     function computeFlightState(t) {
-      let normProg;
-      let isReturn = false;
-      if (t <= HALF_DURATION) normProg = t / HALF_DURATION;
-      else {
-        normProg = 1 - (t - HALF_DURATION) / HALF_DURATION;
+      let x, z, normProg, isReturn = false, isTurn = false, bankBias = 0;
+
+      if (t <= OUT_END) {
+        normProg = t / OUT_END;
+        const p = pathAtProgress(normProg);
+        x = p.x; z = p.z;
+      } else if (t <= TURN_END) {
+        // Smooth 180° left U-turn — plane physically reverses heading
+        isTurn = true;
+        isReturn = false;
+        normProg = 1;
+        const u = smoothstep(0, 1, (t - OUT_END) / TURN_DUR);
+        // Clockwise in XZ so arrival heading (-Z) blends into return (+Z)
+        const ang = _turnStartAng - u * Math.PI;
+        x = _turnCenter.x + Math.sin(ang) * TURN_RADIUS;
+        z = _turnCenter.z + Math.cos(ang) * TURN_RADIUS;
+        bankBias = -Math.sin(u * Math.PI) * 0.62; // right-hand bank through the turn
+      } else {
         isReturn = true;
+        const u = (t - TURN_END) / (TOTAL_DURATION - TURN_END);
+        normProg = 1 - clamp(u);
+        const p = pathAtProgress(normProg);
+        x = p.x; z = p.z;
       }
 
-      const z = -normProg * (TERRAIN_LENGTH - 400);
-      let x = Math.sin(normProg * Math.PI * 4.0) * 70 + Math.cos(normProg * Math.PI * 1.5) * 25;
-      // Drift toward shoreline / open water during coast leg
-      if (normProg > 0.84 && normProg < 0.95) x = lerp(x, 140, smoothstep(0.84, 0.89, normProg));
+      // Keep runway locked near ends
       if (t < 14 || t > TOTAL_DURATION - 14) x = 0;
 
       const groundH = getTerrainElevation(x, z);
-      let clearance = 55;
-      if (t < 7) clearance = 1.15;
-      else if (t < 14) clearance = 1.15 + ((t - 7) / 7) * 48;
-      else if (t > TOTAL_DURATION - 7) clearance = 1.15;
-      else if (t > TOTAL_DURATION - 14) clearance = 1.15 + ((TOTAL_DURATION - t) / 7) * 48;
-      else {
-        clearance = 48 + Math.sin(normProg * Math.PI * 4) * 28;
-        if (normProg > 0.35 && normProg < 0.52) clearance = 72;
-        if (normProg > 0.52 && normProg < 0.68) clearance = 88;
-        if (normProg > 0.86 && normProg < 0.94) clearance = 28;
-      }
-
+      const clearance = clearanceAt(t, normProg, isTurn);
       const y = groundH + clearance;
-      let airspeed = 88;
-      let rpm = 0.78;
-      if (t < 7) {
-        airspeed = (t / 7) * 58;
-        rpm = 1;
-      } else if (t < 14) {
-        airspeed = 58 + ((t - 7) / 7) * 30;
-        rpm = 0.95;
-      } else if (t > TOTAL_DURATION - 7) {
-        airspeed = ((TOTAL_DURATION - t) / 7) * 42;
-        rpm = 0.18;
-      } else if (t > TOTAL_DURATION - 14) {
-        airspeed = 42 + ((TOTAL_DURATION - t - 7) / 7) * 40;
-        rpm = 0.35;
-      }
+
+      let airspeed = 86;
+      let rpm = 0.76;
+      if (t < 7) { airspeed = (t / 7) * 55; rpm = 1; }
+      else if (t < 14) { airspeed = 55 + ((t - 7) / 7) * 30; rpm = 0.95; }
+      else if (isTurn) { airspeed = 68; rpm = 0.88; }
+      else if (t > TOTAL_DURATION - 7) { airspeed = ((TOTAL_DURATION - t) / 7) * 40; rpm = 0.18; }
+      else if (t > TOTAL_DURATION - 14) { airspeed = 40 + ((TOTAL_DURATION - t - 7) / 7) * 40; rpm = 0.35; }
 
       return {
         pos: new THREE.Vector3(x, y, z),
@@ -1309,88 +1382,142 @@
         rpm,
         groundH,
         isReturn,
+        isTurn,
+        bankBias,
         normProg
       };
     }
 
+    // Smooth sample of travel direction (avoids instant flip)
+    function sampleDirection(t) {
+      const dtLook = 0.35;
+      const a = computeFlightState(clamp(t, 0, TOTAL_DURATION));
+      const b = computeFlightState(clamp(t + dtLook, 0, TOTAL_DURATION));
+      const dir = b.pos.clone().sub(a.pos);
+      dir.y *= 0.35; // tame pitch spikes
+      if (dir.lengthSq() < 1e-6) {
+        // Fallback by leg
+        if (t > TURN_END) dir.set(0, 0, 1);
+        else dir.set(0, 0, -1);
+      } else {
+        dir.normalize();
+      }
+      return dir;
+    }
+
     // =========================================================================
-    // AUDIO — flight_journey.mp3 (user-supplied)
+    // AUDIO — flight_journey.mp3
     // =========================================================================
     const audioEl = document.getElementById('journey-audio');
-    audioEl.volume = 0.85;
-    let audioReady = false;
+    const startGate = document.getElementById('start-gate');
+    audioEl.volume = 0.9;
+    audioEl.loop = true;
+    let audioUnlocked = false;
 
-    function syncAudio(t) {
-      if (!audioReady) return;
-      // Keep media clock near simulation clock (tolerate short drift)
-      if (Math.abs(audioEl.currentTime - t) > 0.45) {
-        try { audioEl.currentTime = t % (audioEl.duration || TOTAL_DURATION); } catch (_) {}
+    async function startAudioPlayback() {
+      try {
+        // Muted autoplay often succeeds; unmute after gesture
+        if (!audioUnlocked) audioEl.muted = true;
+        await audioEl.play();
+        if (audioUnlocked) audioEl.muted = false;
+        return true;
+      } catch (err) {
+        return false;
       }
     }
 
-    async function tryPlayAudio() {
+    async function unlockAudioAndBegin() {
+      audioUnlocked = true;
+      audioEl.muted = false;
       try {
         await audioEl.play();
-        audioReady = true;
-      } catch (_) {
-        audioReady = false;
-      }
+      } catch (_) {}
+      if (startGate) startGate.classList.add('hide');
+      setTimeout(() => startGate && startGate.remove(), 500);
     }
 
-    // Silent unlock — no UI; any gesture resumes audio if autoplay blocked
-    const unlock = () => { tryPlayAudio(); };
-    window.addEventListener('pointerdown', unlock, { passive: true });
-    window.addEventListener('keydown', unlock);
-    tryPlayAudio();
+    // Try muted autoplay immediately (keeps clock warm); click unlocks sound
+    startAudioPlayback();
+    if (startGate) {
+      const begin = (e) => {
+        e.preventDefault();
+        unlockAudioAndBegin();
+      };
+      startGate.addEventListener('pointerdown', begin);
+      startGate.addEventListener('keydown', begin);
+    }
+    window.addEventListener('pointerdown', () => {
+      if (!audioUnlocked) unlockAudioAndBegin();
+    }, { passive: true });
 
     // Optional seek via ?t= for verification tooling
     const urlT = new URLSearchParams(location.search).get('t');
     let currentFlightTime = urlT ? clamp(parseFloat(urlT), 0, TOTAL_DURATION) : 0;
     if (urlT) {
-      audioEl.addEventListener('loadedmetadata', () => {
-        try { audioEl.currentTime = currentFlightTime; } catch (_) {}
-      });
+      audioEl.addEventListener('loadedmetadata', () => seekAudioToFlight(currentFlightTime));
     }
 
-    // Expose for headless verification
+    let smoothedPos = null;
+    let smoothedQuat = null;
+    let smoothedBank = 0;
+    let holdSimClock = 0; // >0 means ignore audio master briefly (after seeks)
+
+    function audioTracksTimeline() {
+      const d = audioEl.duration;
+      return d && isFinite(d) && Math.abs(d - TOTAL_DURATION) / TOTAL_DURATION < 0.2;
+    }
+
+    function seekAudioToFlight(t) {
+      if (!audioEl.duration || !isFinite(audioEl.duration)) return;
+      try {
+        if (audioTracksTimeline()) audioEl.currentTime = clamp(t, 0, audioEl.duration - 0.05);
+        // else soundtrack loops freely — don't yank it
+      } catch (_) {}
+    }
+
     window.__flight = {
       setTime: (t) => {
         currentFlightTime = clamp(t, 0, TOTAL_DURATION);
         window.__snapCam = true;
+        smoothedPos = null;
+        smoothedQuat = null;
+        smoothedBank = 0;
+        holdSimClock = 0.5;
+        seekAudioToFlight(currentFlightTime);
       },
       getTime: () => currentFlightTime,
       getBiome: () => getBiomeInfo(currentFlightTime).name
     };
 
     // =========================================================================
-    // CHASE CAMERA
+    // CHASE CAMERA (smooth follow, always behind nose)
     // =========================================================================
-    const chasePos = new THREE.Vector3();
+    const chasePos = new THREE.Vector3(0, 20, 30);
     const chaseLook = new THREE.Vector3();
-    const camVel = new THREE.Vector3();
 
-    function updateChaseCam(planePos, planeQuat, isReturn, dt, groundH) {
-      // Chase uses dampened roll so the lens stays readable in steep terrain
+    function updateChaseCam(planePos, planeQuat, dt, groundH) {
       const e = new THREE.Euler().setFromQuaternion(planeQuat, 'YXZ');
-      e.z *= 0.2;
+      e.z *= 0.15; // heavily damp roll in the lens
       const camQuat = new THREE.Quaternion().setFromEuler(e);
 
       const agl = planePos.y - (groundH || 0);
-      const lift = agl < 22 ? (22 - agl) * 0.45 : 0;
-      const desiredOffset = new THREE.Vector3(3.2, 8.5 + lift, -26.0);
+      const lift = agl < 22 ? (22 - agl) * 0.4 : 0;
+      const desiredOffset = new THREE.Vector3(2.6, 7.8 + lift, -24.0);
       desiredOffset.applyQuaternion(camQuat);
       const desired = planePos.clone().add(desiredOffset);
-      desired.y = Math.max(desired.y, planePos.y + 4.5, (groundH || 0) + 5.0);
+      desired.y = Math.max(desired.y, planePos.y + 4.0, (groundH || 0) + 4.5);
 
-      chasePos.lerp(desired, window.__snapCam ? 1 : (1 - Math.exp(-4.8 * dt)));
+      const camAlpha = window.__snapCam ? 1 : (1 - Math.exp(-2.4 * dt));
+      chasePos.lerp(desired, camAlpha);
       camera.position.copy(chasePos);
 
-      const lookAhead = new THREE.Vector3(0, 1.4, 14);
+      const lookAhead = new THREE.Vector3(0, 1.1, 18);
       lookAhead.applyQuaternion(camQuat);
-      // Bias look target toward the airframe so it stays framed in tight biomes
-      const lookTarget = planePos.clone().multiplyScalar(0.35).add(planePos.clone().add(lookAhead).multiplyScalar(0.65));
-      // fix: improper multiply - rewrite below
-      void lookTarget;
+      const framedLook = planePos.clone().add(lookAhead);
+      framedLook.lerp(planePos, 0.18);
+      chaseLook.lerp(framedLook, window.__snapCam ? 1 : (1 - Math.exp(-3.0 * dt)));
+      camera.lookAt(chaseLook);
+      window.__snapCam = false;
 
       shadowHelperTarget.position.copy(planePos);
       sunLight.position.set(planePos.x + 160, planePos.y + 280, planePos.z - 100);
@@ -1401,86 +1528,114 @@
     // =========================================================================
     const clock = new THREE.Clock();
     let pausedForSeek = !!urlT && new URLSearchParams(location.search).has('pause');
+    const _up = new THREE.Vector3(0, 1, 0);
+    const _m = new THREE.Matrix4();
+    const _targetQuat = new THREE.Quaternion();
+    const _fwd = new THREE.Vector3();
 
     function animate() {
       requestAnimationFrame(animate);
-      const dt = Math.min(clock.getDelta(), 0.08);
+      const dt = Math.min(clock.getDelta(), 0.05);
       const tAbs = clock.elapsedTime;
 
       if (!pausedForSeek) {
-        if (audioReady && !audioEl.paused && audioEl.duration && isFinite(audioEl.duration)) {
-          currentFlightTime = audioEl.currentTime % TOTAL_DURATION;
+        if (holdSimClock > 0) holdSimClock -= dt;
+
+        const audioMaster = audioUnlocked && !audioEl.paused && audioTracksTimeline() && holdSimClock <= 0;
+        if (audioMaster) {
+          // Song length matches journey — audio is the timeline
+          currentFlightTime = audioEl.currentTime;
+          if (currentFlightTime >= TOTAL_DURATION) currentFlightTime = currentFlightTime % TOTAL_DURATION;
         } else {
+          // Smooth sim clock (also used when mp3 length differs — avoids hyper-speed scrubbing)
           currentFlightTime += dt;
-          if (currentFlightTime > TOTAL_DURATION) currentFlightTime = 0;
+          if (currentFlightTime > TOTAL_DURATION) {
+            currentFlightTime = 0;
+            if (audioUnlocked && !audioTracksTimeline()) {
+              try { audioEl.currentTime = 0; } catch (_) {}
+            }
+          }
         }
       }
 
       const state = computeFlightState(currentFlightTime);
-      const lookAheadT = state.isReturn ? -0.18 : 0.18;
-      const next = computeFlightState(clamp(currentFlightTime + lookAheadT, 0, TOTAL_DURATION));
+      const dir = sampleDirection(currentFlightTime);
 
-      const vibX = Math.sin(tAbs * 14.0) * 0.035 * state.rpm;
-      const vibY = Math.cos(tAbs * 17.0) * 0.03 * state.rpm;
-      bushPlane.position.copy(state.pos).add(new THREE.Vector3(vibX, vibY, 0));
+      // Smooth world position (kills path micro-jitter)
+      if (!smoothedPos) smoothedPos = state.pos.clone();
+      const posAlpha = window.__snapCam ? 1 : (1 - Math.exp(-3.2 * dt));
+      smoothedPos.lerp(state.pos, posAlpha);
+      bushPlane.position.copy(smoothedPos);
 
-      // Y-up orientation: Matrix4.lookAt aims -Z at target; rotateY(PI) so modeled +Z nose leads
-      const _up = new THREE.Vector3(0, 1, 0);
-      const _m = new THREE.Matrix4();
-      const lookTarget = next.pos.clone();
-      // Keep look target from flipping when samples are nearly coincident
-      if (lookTarget.distanceToSquared(state.pos) < 0.0001) {
-        lookTarget.add(new THREE.Vector3(0, 0, state.isReturn ? 1 : -1));
-      }
-      _m.lookAt(state.pos, lookTarget, _up);
-      bushPlane.quaternion.setFromRotationMatrix(_m);
-      bushPlane.rotateY(Math.PI);
+      // Orientation from travel direction (+Z = nose), slerped
+      _fwd.copy(dir);
+      const lookTarget = smoothedPos.clone().add(_fwd);
+      _m.lookAt(smoothedPos, lookTarget, _up);
+      _targetQuat.setFromRotationMatrix(_m);
+      // lookAt aims -Z forward; model nose is +Z
+      const fix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+      _targetQuat.multiply(fix);
 
-      // Gentle coordinated bank from lateral path curvature
-      const prev = computeFlightState(clamp(currentFlightTime - 0.25, 0, TOTAL_DURATION));
-      const latAcc = (state.pos.x - prev.pos.x) - (next.pos.x - state.pos.x);
-      const bank = clamp(latAcc * 0.02, -0.28, 0.28);
-      bushPlane.rotateZ(-bank);
+      // Coordinated bank from curvature + turn bias
+      const prev = computeFlightState(clamp(currentFlightTime - 0.4, 0, TOTAL_DURATION));
+      const nxt = computeFlightState(clamp(currentFlightTime + 0.4, 0, TOTAL_DURATION));
+      const latAcc = (state.pos.x - prev.pos.x) - (nxt.pos.x - state.pos.x);
+      const targetBank = clamp(latAcc * 0.012 + state.bankBias, -0.65, 0.65);
+      smoothedBank = lerp(smoothedBank, targetBank, 1 - Math.exp(-3.5 * dt));
+      const bankQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -smoothedBank);
+      _targetQuat.multiply(bankQ);
 
-      bushPlane.userData.propGroup.rotation.z += (0.4 + state.rpm * 1.1);
+      if (!smoothedQuat) smoothedQuat = _targetQuat.clone();
+      const rotAlpha = window.__snapCam ? 1 : (1 - Math.exp(-4.0 * dt));
+      smoothedQuat.slerp(_targetQuat, rotAlpha);
+      bushPlane.quaternion.copy(smoothedQuat);
+      // Debug probe for verification
+      window.__flightDebug = {
+        t: currentFlightTime,
+        pos: smoothedPos.toArray(),
+        fwd: _fwd.toArray(),
+        isReturn: state.isReturn,
+        isTurn: state.isTurn,
+        bank: smoothedBank
+      };
 
-      // Atmosphere
+      bushPlane.userData.propGroup.rotation.z += (0.35 + state.rpm * 0.95) * (dt * 60);
+
+      // Atmosphere (smooth fog color transitions)
       const biome = getBiomeInfo(currentFlightTime);
-      skyMat.uniforms.uSkyColor.value.set(biome.sky[0], biome.sky[1], biome.sky[2]);
+      skyMat.uniforms.uSkyColor.value.lerp(new THREE.Vector3(biome.sky[0], biome.sky[1], biome.sky[2]), 1 - Math.exp(-1.2 * dt));
       skyMat.uniforms.uTime.value = tAbs;
-      scene.fog.color.setHex(biome.fog);
-      scene.fog.density = biome.dens;
+      scene.fog.color.lerp(new THREE.Color(biome.fog), 1 - Math.exp(-1.2 * dt));
+      scene.fog.density = lerp(scene.fog.density, biome.dens, 1 - Math.exp(-1.2 * dt));
       terrainMat.uniforms.uFogColor.value.copy(scene.fog.color);
-      terrainMat.uniforms.uFogDensity.value = biome.dens;
+      terrainMat.uniforms.uFogDensity.value = scene.fog.density;
       terrainMat.uniforms.uTime.value = tAbs;
       oceanMat.uniforms.uTime.value = tAbs;
       oceanMat.uniforms.uFogColor.value.copy(scene.fog.color);
-      sunLight.intensity = biome.sun;
+      sunLight.intensity = lerp(sunLight.intensity, biome.sun, 1 - Math.exp(-1.0 * dt));
       hemiLight.intensity = biome.index >= 5 && biome.index <= 7 ? 0.55 : 0.72;
       bloomPass.strength = biome.index === 4 ? 0.22 : 0.28;
 
-      // Sparse atmospheric motes — keep far from lens, never a screen veil
-      particles.position.copy(state.pos);
+      particles.position.copy(smoothedPos);
       particles.position.y -= 8;
       if (biome.index === 4) {
         particleMat.color.setHex(0xe8f2ff);
-        particleMat.opacity = 0.12;
-        particleMat.size = 0.25;
+        particleMat.opacity = 0.10;
+        particleMat.size = 0.22;
       } else if (biome.index >= 5 && biome.index <= 7) {
         particleMat.color.setHex(0xe6c896);
-        particleMat.opacity = 0.10;
-        particleMat.size = 0.35;
+        particleMat.opacity = 0.08;
+        particleMat.size = 0.3;
       } else if (biome.index === 8) {
         particleMat.color.setHex(0xd8f0ff);
-        particleMat.opacity = 0.08;
-        particleMat.size = 0.28;
+        particleMat.opacity = 0.06;
+        particleMat.size = 0.25;
       } else {
         particleMat.opacity = 0.0;
       }
       const pArr = particleGeo.attributes.position.array;
       for (let i = 0; i < particleCount; i++) {
         pArr[i * 3 + 1] -= dt * (0.8 + (i % 5) * 0.15);
-        pArr[i * 3] += Math.sin(tAbs + i) * 0.02;
         if (pArr[i * 3 + 1] < -5) {
           pArr[i * 3] = (Math.random() - 0.5) * 120;
           pArr[i * 3 + 1] = 10 + Math.random() * 50;
@@ -1489,22 +1644,13 @@
       }
       particleGeo.attributes.position.needsUpdate = true;
 
-      // Soft grade warmth in desert/canyon
       gradeShader.uniforms.uWarm.value = (biome.index >= 5 && biome.index <= 7) ? 0.14 : 0.05;
 
-      updateChaseCam(bushPlane.position, bushPlane.quaternion, state.isReturn, dt, state.groundH);
-      syncAudio(currentFlightTime);
+      updateChaseCam(bushPlane.position, bushPlane.quaternion, dt, state.groundH);
 
       skyDome.position.copy(camera.position);
       composer.render();
     }
-
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      composer.setSize(window.innerWidth, window.innerHeight);
-    });
 
     animate();
   </script>
