@@ -10,7 +10,6 @@ import cairo
 from hey_joe import config as C
 from hey_joe.geometry import (
     SeededParticles,
-    linear_fill,
     minaret,
     mughal_arch,
     radial_fill,
@@ -29,11 +28,11 @@ class DesertScene(Scene):
         self.skyline = []
         x = -80
         while x < width + 400:
-            kind = rng.choice(["arch", "arch", "minaret", "dome"])
-            w = rng.uniform(50, 110)
-            h = rng.uniform(70, 160)
+            kind = rng.choice(["arch", "arch", "arch", "minaret", "dome", "gate"])
+            w = rng.uniform(55, 130)
+            h = rng.uniform(90, 200)
             self.skyline.append({"x": x, "w": w, "h": h, "kind": kind})
-            x += w * rng.uniform(0.7, 1.3)
+            x += w * rng.uniform(0.85, 1.35)
 
     def draw_bg(self, ctx: cairo.Context, t: float, local_t: float, progress: float):
         # Massive multi-ringed sunburst — Saffron / Terracotta
@@ -100,20 +99,29 @@ class DesertScene(Scene):
         for b in self.skyline:
             x = ((b["x"] - scroll) % (self.w + 500)) - 100
             if b["kind"] == "minaret":
-                minaret(ctx, x, base_y, b["h"], sil, 1.0)
+                minaret(ctx, x + b["w"] * 0.5, base_y, b["h"], sil, 1.0)
             elif b["kind"] == "dome":
-                # Rajasthani dome on plinth
                 set_rgb(ctx, sil, 1.0)
-                ctx.rectangle(x, base_y - b["h"] * 0.45, b["w"], b["h"] * 0.45)
+                ctx.rectangle(x, base_y - b["h"] * 0.4, b["w"], b["h"] * 0.4)
                 ctx.fill()
-                ctx.arc(x + b["w"] / 2, base_y - b["h"] * 0.45, b["w"] * 0.45, math.pi, math.tau)
+                ctx.arc(x + b["w"] / 2, base_y - b["h"] * 0.4, b["w"] * 0.48, math.pi, math.tau)
                 ctx.fill()
                 ctx.set_line_width(2)
-                ctx.move_to(x + b["w"] / 2, base_y - b["h"] * 0.45 - b["w"] * 0.45)
-                ctx.line_to(x + b["w"] / 2, base_y - b["h"] * 0.75)
+                ctx.move_to(x + b["w"] / 2, base_y - b["h"] * 0.4 - b["w"] * 0.48)
+                ctx.line_to(x + b["w"] / 2, base_y - b["h"] * 0.7)
                 ctx.stroke()
+            elif b["kind"] == "gate":
+                # Triple-arch gateway silhouette
+                gap = b["w"] / 3.2
+                for k in range(3):
+                    mughal_arch(ctx, x + k * gap, base_y, gap * 0.92, b["h"] * (0.7 + 0.15 * (k == 1)), sil, 1.0)
             else:
                 mughal_arch(ctx, x, base_y, b["w"], b["h"], sil, 1.0)
+                # flanking chhatri finials
+                set_rgb(ctx, sil, 1.0)
+                for fx in (x + b["w"] * 0.08, x + b["w"] * 0.92):
+                    ctx.arc(fx, base_y - b["h"] * 0.55, 6, math.pi, math.tau)
+                    ctx.fill()
 
         # Fast wind streamlines
         for i in range(18):

@@ -15,7 +15,6 @@ from hey_joe.geometry import (
     peacock_eye,
     radial_fill,
     set_rgb,
-    stroke_ring,
 )
 from hey_joe.scenes.base import Scene
 
