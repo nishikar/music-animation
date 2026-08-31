@@ -167,6 +167,9 @@ class WorldRenderer:
         for i in range(6):
             cycle = 70.0
             tz = bz + 8.0 + ((i * 12.0) - (frame.t * 22.0)) % cycle
+            # Keep clear of the hero bus so sprites do not stack
+            if tz < bz + 14.0:
+                continue
             self._draw_billboard(
                 "jingle_truck",
                 (-3.15, 0.06, tz),

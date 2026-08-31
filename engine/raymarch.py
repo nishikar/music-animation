@@ -525,12 +525,13 @@ vec2 map(vec3 p) {
 
     // Explicit canyon cliffs (heightfields undersample vertical faces)
     if (u_landscape == 5) {
-        float nW = fbm3(vec2(p.z * 0.08, p.y * 0.12)) * 2.2;
-        // Wide chase corridor so camera at ~x=9 never sits inside rock
-        float left = sdBox(p - vec3(-14.0 - nW * 0.5, 10.0, u_bus_z), vec3(5.5 + nW, 14.0, 100.0));
-        float right = sdBox(p - vec3(16.0 + nW * 0.5, 10.0, u_bus_z), vec3(5.5 + nW, 14.0, 100.0));
-        left = opSub(left, sdBox(p - vec3(-10.5, 4.0, u_bus_z), vec3(1.6, 1.1, 100.0)));
-        right = opSub(right, sdBox(p - vec3(13.0, 6.0, u_bus_z), vec3(1.6, 1.1, 100.0)));
+        float nW = fbm3(vec2(p.z * 0.1, p.y * 0.15)) * 2.5;
+        // Left cliff across the road (camera sits on +X and looks inward)
+        float left = sdBox(p - vec3(-8.5 - nW * 0.4, 11.0, u_bus_z), vec3(3.8 + nW, 14.0, 120.0));
+        // Right cliff behind / beside chase cam
+        float right = sdBox(p - vec3(18.5 + nW * 0.4, 11.0, u_bus_z), vec3(6.0 + nW, 14.0, 120.0));
+        left = opSub(left, sdBox(p - vec3(-6.2, 3.5, u_bus_z), vec3(1.4, 1.0, 120.0)));
+        left = opSub(left, sdBox(p - vec3(-6.0, 7.5, u_bus_z), vec3(1.2, 0.7, 120.0)));
         res = vmin(res, vec2(min(left, right), MAT_ROCK));
     }
 
