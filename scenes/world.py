@@ -87,14 +87,15 @@ class WorldRenderer:
         self.billboard = BillboardGPU(ctx, self.prog_bill)
 
         # Crawl quad
+        # Crawl quad — large but within frame once perspective-tilted
         crawl_verts = np.array(
             [
-                [-6, 0, 0, 0, 1],
-                [6, 0, 0, 1, 1],
-                [6, 8, 0, 1, 0],
-                [-6, 0, 0, 0, 1],
-                [6, 8, 0, 1, 0],
-                [-6, 8, 0, 0, 0],
+                [-11.0, 0.0, 0.0, 0.0, 1.0],
+                [11.0, 0.0, 0.0, 1.0, 1.0],
+                [11.0, 16.0, 0.0, 1.0, 0.0],
+                [-11.0, 0.0, 0.0, 0.0, 1.0],
+                [11.0, 16.0, 0.0, 1.0, 0.0],
+                [-11.0, 16.0, 0.0, 0.0, 0.0],
             ],
             dtype=np.float32,
         )
@@ -109,10 +110,10 @@ class WorldRenderer:
         ctx = self.ctx
         p = self.prog_mesh
         self.meshes["ground_cobble"] = MeshGPU(
-            ctx, p, M.ground_grid(80, 40, color_a=(0.4, 0.38, 0.35), color_b=(0.35, 0.33, 0.3))
+            ctx, p, M.ground_grid(80, 40, color_a=(0.45, 0.42, 0.38), color_b=(0.38, 0.36, 0.32))
         )
         self.meshes["ground_grass"] = MeshGPU(
-            ctx, p, M.ground_grid(100, 40, color_a=(0.28, 0.42, 0.22), color_b=(0.24, 0.38, 0.2))
+            ctx, p, M.ground_grid(100, 40, color_a=(0.22, 0.48, 0.18), color_b=(0.28, 0.55, 0.22))
         )
         self.meshes["road"] = MeshGPU(ctx, p, M.road_ribbon(90, 5.0))
         self.meshes["house"] = MeshGPU(ctx, p, M.gabled_house())
@@ -126,6 +127,7 @@ class WorldRenderer:
         self.meshes["pagoda2"] = MeshGPU(ctx, p, M.pagoda(4, 5.5))
         self.meshes["terraces"] = MeshGPU(ctx, p, M.terrace_hills())
         self.meshes["mountains"] = MeshGPU(ctx, p, M.mountain_range())
+        self.meshes["pine"] = MeshGPU(ctx, p, M.pine_tree(5.5))
         self.meshes["skyline"] = MeshGPU(
             ctx,
             p,
@@ -314,6 +316,8 @@ class WorldRenderer:
     def _draw_sky(self, frame: SceneFrame) -> None:
         self.ctx.disable(moderngl.CULL_FACE)
         self.ctx.disable(moderngl.DEPTH_TEST)
+        # Prevent the sky sphere from polluting the depth buffer (xyww → depth 1).
+        self.ctx.depth_mask = False
         p = self.prog_sky
         p["u_top"].value = frame.sky_top
         p["u_horizon"].value = frame.sky_horizon
@@ -323,6 +327,7 @@ class WorldRenderer:
         p["u_sun_color"].value = frame.sun_color
         p["u_stars"].value = 1 if frame.stars else 0
         self.sky_vao.render()
+        self.ctx.depth_mask = True
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.ctx.enable(moderngl.CULL_FACE)
 
@@ -349,27 +354,54 @@ class WorldRenderer:
         if not frame.bus_visible:
             return
         bp = frame.bus_pos
-        # billboard bus facing side-ish
-        self._draw_billboard("vw_bus", (bp.x, bp.y, bp.z), (5.5, 3.2), frame, sway=0.0, face_cam=True)
+        # Side-profile cutout that faces the camera (readable from any dolly angle).
+        self._draw_billboard(
+            "vw_bus",
+            (bp.x, bp.y, bp.z),
+            (6.4, 3.6),
+            frame,
+            sway=0.0,
+            face_cam=True,
+        )
 
     def _draw_crawl(self, frame: SceneFrame) -> None:
-        # Inclined text plane θx = -60°, scrolling +Z +Y
+        # Large inclined plane — starts filling most of the frame
         import glm as g
         from engine.mathutil import mat4_bytes
 
         m = g.mat4(1.0)
-        z = -8.0 + frame.crawl_offset * 0.85
-        y = -2.0 + frame.crawl_offset * 0.35
+        z = 4.0 - frame.crawl_offset * 1.35
+        y = -8.0 + frame.crawl_offset * 0.7
         m = g.translate(m, g.vec3(0.0, y, z))
-        m = g.rotate(m, g.radians(-60.0), g.vec3(1, 0, 0))
+        m = g.rotate(m, g.radians(-42.0), g.vec3(1, 0, 0))
+        m = g.scale(m, g.vec3(1.15, 1.15, 1.15))
         p = self.prog_crawl
         p["u_model"].write(mat4_bytes(m))
-        p["u_glow"].value = 0.85 + 0.15 * math.sin(frame.t * 2.0)
+        p["u_glow"].value = 1.0
         self.tex_crawl.use(0)
         p["u_tex"] = 0
         self.ctx.disable(moderngl.CULL_FACE)
         self.crawl_vao.render()
         self.ctx.enable(moderngl.CULL_FACE)
+
+    def _draw_roadside_pines(self, frame: SceneFrame, bz: float) -> None:
+        """Pines far from the camera path so they don't clip the lens."""
+        for i in range(14):
+            side = -1.0 if i % 2 == 0 else 1.0
+            x = side * (11.0 + (i % 3) * 1.8)
+            z = bz - 12.0 + i * 4.0
+            scale = 0.7 + (i % 3) * 0.1
+            self._draw_mesh("pine", frame, model_trs(x, 0.0, z, scale, scale, scale))
+
+    def _draw_ground_strip(self, frame: SceneFrame, bz: float, mode: str = "grass") -> None:
+        """Guaranteed-visible road + shoulders for travel scenes."""
+        if mode == "grass":
+            self._draw_mesh("ground_grass", frame, model_trs(0, -0.02, bz, 0.7, 1, 1))
+        else:
+            self._draw_mesh("ground_cobble", frame, model_trs(0, -0.02, bz, 0.7, 1, 1))
+        self._draw_mesh("road", frame, model_trs(0, 0.05, bz, 1.15, 1, 1))
+        # Shoulder strips as scaled roads tinted via separate draws aren't available —
+        # use thin boxes from house-scale isn't ideal; rely on grass/cobble contrast.
 
     # ------------------------------------------------------------------
     def render_frame(self, frame: SceneFrame, display: bool = True) -> None:
@@ -389,78 +421,61 @@ class WorldRenderer:
             bz = frame.bus_pos.z
             bav = frame.props.get("bavaria", 0.0)
             if bav < 0.55:
-                self._draw_mesh("ground_cobble", frame, model_trs(0, 0, bz))
-                self._draw_mesh("road", frame, model_trs(0, 0.06, bz, 0.85, 1, 1))
-                # Canal as a flat colored strip (stable vs wavy water mesh)
-                self._draw_mesh(
-                    "road",
-                    frame,
-                    model_trs(0, -0.2, bz + 16, 2.2, 1, 0.35),
-                )
-                self._draw_mesh("bridge", frame, model_trs(0, 0, bz + 16, 0.9, 0.9, 0.9))
-                for i, x in enumerate((-8.5, 8.5)):
-                    for row in range(4):
-                        zz = bz - 8.0 + row * 7.0
-                        self._draw_mesh(
-                            "house",
-                            frame,
-                            model_trs(x, 0.0, zz, 0.7, 0.9, 0.7, yaw=0.0),
-                        )
+                self._draw_ground_strip(frame, bz, mode="cobble")
+                self._draw_mesh("bridge", frame, model_trs(0, 0, bz + 14, 0.9, 0.9, 0.9))
+                for x in (-8.5, 8.5):
+                    for row in range(5):
+                        zz = bz - 10.0 + row * 6.5
+                        self._draw_mesh("house", frame, model_trs(x, 0.0, zz, 0.75, 0.95, 0.75))
             if bav > 0.35:
-                self._draw_mesh("ground_grass", frame, model_trs(0, 0, bz))
-                self._draw_mesh("road", frame, model_trs(0, 0.05, bz))
-                self._draw_instances(self.inst_tree, frame, mode=0)
-                self._draw_mesh("mountains", frame, model_trs(0, -2, bz - 55, 0.9, 0.7, 0.9))
+                self._draw_ground_strip(frame, bz, mode="grass")
+                self._draw_roadside_pines(frame, bz)
+                self._draw_mesh("mountains", frame, model_trs(0, -2, bz - 50, 1.1, 0.8, 1.1))
             self._draw_bus(frame)
             for b in frame.billboards:
                 self._draw_billboard(b["sprite"], b["pos"], b["size"], frame, sway=b.get("sway", 0))
 
         elif sid == "istanbul":
-            self._draw_mesh("suspension", frame, model_trs(0, 0, frame.bus_pos.z))
-            self._draw_mesh("skyline", frame, model_trs(0, 0, frame.bus_pos.z))
+            bz = frame.bus_pos.z
+            # Strait water + bridge deck reference
+            self._draw_mesh("ground_cobble", frame, model_trs(0, 3.6, bz, 0.35, 1, 1.0))
+            self._draw_mesh("suspension", frame, model_trs(0, 0, bz))
+            self._draw_mesh("skyline", frame, model_trs(0, 0, bz - 8, 1.1, 1.1, 1.1))
             self._draw_instances(self.inst_chimney, frame, mode=0)
             self._draw_instances(self.inst_balloon, frame, mode=3, emissive=0.15)
             self._draw_bus(frame)
             for b in frame.billboards:
                 self._draw_billboard(b["sprite"], b["pos"], b["size"], frame, sway=b.get("sway", 0))
-            if frame.props.get("cats"):
-                for i in range(6):
-                    self._draw_billboard(
-                        "cat",
-                        (3.2 if i % 2 == 0 else -3.2, 5.0, frame.bus_pos.z - 8 + i * 4),
-                        (0.8, 0.6),
-                        frame,
-                        sway=0.02,
-                    )
 
         elif sid == "persia":
-            self._draw_mesh("dunes", frame, model_trs(0, 0, frame.bus_pos.z))
-            self._draw_mesh("road", frame, model_trs(0, 0.5, frame.bus_pos.z))
-            for zoff in (8, 22, 36):
-                self._draw_mesh("iwan", frame, model_trs(0, 0, frame.bus_pos.z + zoff), tex=self.tex_mosaic)
+            bz = frame.bus_pos.z
+            self._draw_mesh("dunes", frame, model_trs(0, 0, bz))
+            self._draw_mesh("road", frame, model_trs(0, 0.35, bz, 1.1, 1, 1))
+            for zoff in (10, 26, 42):
+                self._draw_mesh("iwan", frame, model_trs(0, 0, bz + zoff), tex=self.tex_mosaic)
             self._draw_bus(frame)
             for b in frame.billboards:
                 self._draw_billboard(b["sprite"], b["pos"], b["size"], frame, sway=b.get("sway", 0))
-            if frame.props.get("gazelles"):
-                for i in range(5):
-                    gz = frame.bus_pos.z + i * 3.5
-                    gx = 8 + math.sin(frame.t * 3 + i) * 2
-                    self._draw_billboard("gazelle", (gx, 1.0 + abs(math.sin(frame.t * 6 + i)) * 0.8, gz), (2.0, 1.5), frame)
 
         elif sid == "khyber":
-            self._draw_mesh("canyon", frame, model_trs(frame.bus_pos.x * 0.2, 0, frame.bus_pos.z))
-            self._draw_mesh("road", frame, model_trs(frame.bus_pos.x, 0.3, frame.bus_pos.z, 0.7, 1, 1, yaw=frame.bus_yaw))
+            bp = frame.bus_pos
+            self._draw_mesh("canyon", frame, model_trs(bp.x * 0.15, 0, bp.z))
+            self._draw_mesh("road", frame, model_trs(bp.x, 0.2, bp.z, 0.85, 1, 1, yaw=frame.bus_yaw))
             self._draw_bus(frame)
             for b in frame.billboards:
                 self._draw_billboard(b["sprite"], b["pos"], b["size"], frame, sway=b.get("sway", 0))
-            # oncoming jingle trucks
-            for i in range(4):
-                tz = frame.bus_pos.z + 25 + i * 18 - (frame.t * 4.0) % 60
-                self._draw_billboard("jingle_truck", (frame.bus_pos.x - 4.5, 0.4, tz), (5.0, 3.5), frame)
+            for i in range(3):
+                tz = bp.z + 22 + i * 20 - (frame.t * 5.0) % 55
+                self._draw_billboard(
+                    "jingle_truck",
+                    (bp.x - 4.0, 0.0, tz),
+                    (5.2, 3.6),
+                    frame,
+                    face_cam=True,
+                )
 
         elif sid == "varanasi":
             self._draw_mesh("ghats", frame, model_trs(0, 0, 5))
-            # water
             self.prog_water["u_model"].write(model_trs(0, 0.0, -5, 1.2, 1, 1.2))
             self.prog_water["u_time"].value = frame.t
             self.prog_water["u_light_dir"].value = frame.light_dir
@@ -484,30 +499,17 @@ class WorldRenderer:
             self._draw_mesh("mountains", frame, model_trs(0, 5, -40, 1.2, 1.2, 1.2))
             self._draw_mesh("suspension", frame, model_trs(0, 6, 10, 0.6, 0.6, 0.6))
             self._draw_instances(self.inst_flag, frame, mode=2)
-            # eagles as small billboards soaring
-            for i in range(6):
-                ang = frame.t * 0.4 + i
-                ex = math.cos(ang) * (20 + i * 3)
-                ez = math.sin(ang) * (20 + i * 3)
-                ey = 16 + math.sin(frame.t + i) * 3
-                self._draw_billboard("pigeon", (ex, ey, ez), (2.5, 1.5), frame, sway=0.1)
 
         elif sid == "kathmandu":
             self._draw_mesh("ground_cobble", frame, model_trs(0, 0, 0))
             self._draw_mesh("pagoda", frame, model_trs(-8, 0, 12))
             self._draw_mesh("pagoda2", frame, model_trs(10, 0, 8))
             self._draw_mesh("pagoda", frame, model_trs(2, 0, 20, 0.7, 0.7, 0.7))
-            for i, x in enumerate((-12, -4, 4, 12)):
-                self._draw_mesh("house", frame, model_trs(x, 0, -6, 0.7, 0.7, 0.9, yaw=0))
+            for x in (-12, -4, 4, 12):
+                self._draw_mesh("house", frame, model_trs(x, 0, -6, 0.7, 0.7, 0.9))
             self._draw_bus(frame)
             for b in frame.billboards:
                 self._draw_billboard(b["sprite"], b["pos"], b["size"], frame, sway=b.get("sway", 0))
-            if frame.props.get("pigeons"):
-                for i in range(24):
-                    px = math.cos(frame.t * 2 + i) * (4 + i * 0.3)
-                    pz = 6 + math.sin(frame.t * 2.5 + i) * (3 + i * 0.2)
-                    py = 2 + abs(math.sin(frame.t * 3 + i)) * 5
-                    self._draw_billboard("pigeon", (px, py, pz), (0.6, 0.45), frame)
 
         elif sid == "rooftop":
             self._draw_mesh("rooftop", frame, model_trs(0, 0, 0))
@@ -522,7 +524,6 @@ class WorldRenderer:
             self._draw_mesh("mountains", frame, model_trs(0, 0, -30, 2.0, 1.8, 2.0))
             self._draw_instances(self.inst_star, frame, mode=1, emissive=1.0)
             self._draw_instances(self.inst_lamp, frame, mode=3, emissive=1.0)
-            # distant rooftop silhouette boxes
             for i in range(10):
                 self._draw_mesh(
                     "house",

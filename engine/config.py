@@ -37,8 +37,9 @@ SCENES = (
 )
 
 CRAWL_TEXT = (
-    "The Chili Peppers travel the silk route\n"
-    "to Nepal to meet the legendary\n"
+    "The Chili Peppers travel\n"
+    "the silk route to Nepal\n"
+    "to meet the legendary\n"
     "Narayan Gopal"
 )
 

@@ -43,6 +43,7 @@ void main() {
 
 MESH_FS = """
 #version 330 core
+""" + CAMERA_UBO + """
 in vec3 v_world;
 in vec3 v_normal;
 in vec2 v_uv;
@@ -65,7 +66,7 @@ void main() {
     vec3 N = normalize(v_normal);
     vec3 L = normalize(-u_light_dir);
     float ndl = max(dot(N, L), 0.0);
-    float wrap = ndl * 0.75 + 0.25;
+    float wrap = ndl * 0.65 + 0.35;
     vec3 base = v_color;
     if (u_use_tex == 1) {
         vec4 tex = texture(u_tex, v_uv);
@@ -73,9 +74,9 @@ void main() {
     }
     vec3 lit = base * (u_ambient + u_light_color * wrap);
     lit += base * u_emissive;
-    float dist = length(v_world);
-    float fog = 1.0 - exp(-u_fog_density * dist * dist * 0.00008);
-    lit = mix(lit, u_fog_color, clamp(fog, 0.0, 0.85));
+    float dist = length(v_world - u_cam_pos.xyz);
+    float fog = 1.0 - exp(-u_fog_density * dist * 0.015);
+    lit = mix(lit, u_fog_color, clamp(fog, 0.0, 0.75));
     f_color = vec4(lit, u_alpha);
 }
 """

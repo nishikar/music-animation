@@ -128,7 +128,12 @@ def ground_grid(
             p11 = verts[z + 1][x + 1]
             p01 = verts[z + 1][x]
             c = color_a if (x + z) % 2 == 0 else color_b
-            _add_quad(pos, nrm, uvs, cols, idx, p00, p10, p11, p01, c, (x / divisions, z / divisions, (x + 1) / divisions, (z + 1) / divisions))
+            # CCW when viewed from +Y so the topside survives back-face culling
+            _add_quad(
+                pos, nrm, uvs, cols, idx,
+                p00, p01, p11, p10, c,
+                (x / divisions, z / divisions, (x + 1) / divisions, (z + 1) / divisions),
+            )
     return MeshData(
         np.array(pos, np.float32),
         np.array(nrm, np.float32),
@@ -141,16 +146,16 @@ def ground_grid(
 def road_ribbon(length=60.0, width=4.0, color=(0.18, 0.18, 0.2), y=0.02) -> MeshData:
     pos, nrm, uvs, cols, idx = _empty()
     hl, hw = length * 0.5, width * 0.5
+    # CCW from +Y
     _add_quad(
         pos, nrm, uvs, cols, idx,
-        (-hw, y, -hl), (hw, y, -hl), (hw, y, hl), (-hw, y, hl),
+        (-hw, y, -hl), (-hw, y, hl), (hw, y, hl), (hw, y, -hl),
         color,
     )
-    # center line
     stripe = (0.85, 0.75, 0.2)
     _add_quad(
         pos, nrm, uvs, cols, idx,
-        (-0.08, y + 0.01, -hl), (0.08, y + 0.01, -hl), (0.08, y + 0.01, hl), (-0.08, y + 0.01, hl),
+        (-0.08, y + 0.01, -hl), (-0.08, y + 0.01, hl), (0.08, y + 0.01, hl), (0.08, y + 0.01, -hl),
         stripe,
     )
     return MeshData(np.array(pos, np.float32), np.array(nrm, np.float32), np.array(uvs, np.float32), np.array(cols, np.float32), np.array(idx, np.uint32))

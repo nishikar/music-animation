@@ -105,34 +105,54 @@ def color_grade_lut(size: int = 32) -> np.ndarray:
     return (lut * 255).astype(np.uint8)
 
 
-def crawl_text_texture(text: str, width: int = 1024, height: int = 1024) -> np.ndarray:
-    """Golden Star-Wars-style crawl text on transparent background."""
+def crawl_text_texture(text: str, width: int = 2048, height: int = 2048) -> np.ndarray:
+    """Golden Star-Wars-style crawl text — large, centered, fills most of the atlas."""
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
-    except OSError:
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 48)
-        except OSError:
-            font = ImageFont.load_default()
 
-    lines = text.split("\n")
-    y = 40
+    def _font(size: int):
+        for path in (
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/Library/Fonts/Arial Bold.ttf",
+        ):
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
+        return ImageFont.load_default()
+
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    # Pick the largest size that still fits with margins.
+    font = _font(120)
+    for size in (140, 120, 100, 84, 72):
+        font = _font(size)
+        widths = []
+        ok = True
+        for line in lines:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            tw = bbox[2] - bbox[0]
+            widths.append(tw)
+            if tw > width * 0.92:
+                ok = False
+                break
+        if ok:
+            break
+
+    line_gap = int(font.size * 1.55)
+    total_h = line_gap * len(lines)
+    y = (height - total_h) // 2
     gold = (255, 232, 31, 255)
     for line in lines:
-        line = line.strip()
-        if not line:
-            y += 30
-            continue
         bbox = draw.textbbox((0, 0), line, font=font)
         tw = bbox[2] - bbox[0]
         x = (width - tw) // 2
-        # soft glow layers
-        for ox, oy, a in ((0, 0, 80), (2, 2, 60), (-2, -1, 40)):
+        for ox, oy, a in ((0, 0, 110), (3, 3, 70), (-3, -2, 50), (6, 0, 40)):
             draw.text((x + ox, y + oy), line, font=font, fill=(255, 200, 40, a))
         draw.text((x, y), line, font=font, fill=gold)
-        y += 70
+        y += line_gap
     return np.array(img, dtype=np.uint8)
 
 

@@ -105,21 +105,21 @@ def evaluate_frame(t: float) -> SceneFrame:
         light_dir = (0.2, -0.5, -0.8)
         light_color = (0.4, 0.35, 0.5)
         ambient = (0.08, 0.08, 0.14)
-        fog_density = 0.15
+        fog_density = 0.05
         fog_color = (0.02, 0.02, 0.06)
         bus_visible = False
         bloom = 0.55
         grain = 0.1
-        crawl_offset = local * 2.8
-        # stationary watching crawl, then dive at 12.5s
+        # Slow scroll — text stays large on screen longer
+        crawl_offset = local * 1.6
+        # Classic Star Wars framing: camera above, looking down the crawl plane
         if local < 12.5:
-            camera = _cam((0, 2.0, 14.0), (0, 0.0, -20.0), fovy=45)
+            camera = _cam((0.0, 4.0, 8.0), (0.0, -1.0, -12.0), fovy=50)
         else:
             dive = smoothstep(12.5, 14.0, local)
-            pitch = dive * (math.pi * 0.5)
-            eye = glm.vec3(0, 2.0 - dive * 8.0, 14.0 - dive * 20.0)
-            target = glm.vec3(0, 2.0 - math.sin(pitch) * 30.0, -20.0 - dive * 40.0)
-            camera = _cam(eye, target, fovy=55)
+            eye = glm.vec3(0.0, 4.0 - dive * 12.0, 8.0 - dive * 16.0)
+            target = glm.vec3(0.0, -1.0 - dive * 18.0, -12.0 - dive * 30.0)
+            camera = _cam(eye, target, fovy=lerp(50, 58, dive))
             props["cloud_deck"] = dive
             sky_bottom = (0.15, 0.18, 0.35)
             if dive > 0.5:
@@ -132,42 +132,40 @@ def evaluate_frame(t: float) -> SceneFrame:
         stage = "bavaria" if bavaria > 0.5 else "amsterdam"
         props["bavaria"] = bavaria
         bus_z = -20.0 + local * 1.6
-        bus_pos = glm.vec3(0.0, 0.55, bus_z)
+        bus_pos = glm.vec3(0.0, 0.0, bus_z)
         bus_yaw = 0.0
-        # Side-profile dolly — pull back so houses don't swallow the frame
-        camera = _cam((11.0, 3.0, bus_z - 2.5), (0.0, 1.6, bus_z + 2.0), fovy=40)
+        # 3/4 tracking shot — elevated, looking down the road for real perspective
+        camera = _cam((9.0, 4.5, bus_z - 8.0), (0.0, 0.4, bus_z + 5.0), fovy=40)
         if bavaria < 0.5:
             sky_top = (0.55, 0.65, 0.78)
             sky_horizon = (0.75, 0.78, 0.82)
-            sky_bottom = (0.45, 0.48, 0.42)
+            sky_bottom = (0.42, 0.45, 0.40)
             sun_elev = 0.35
             light_color = (0.9, 0.92, 0.95)
-            ambient = (0.3, 0.32, 0.35)
-            fog_density = 0.9
+            ambient = (0.35, 0.36, 0.38)
+            fog_density = 0.15
             fog_color = (0.7, 0.74, 0.78)
         else:
             sky_top = (0.35, 0.55, 0.85)
-            sky_horizon = (1.0, 0.75, 0.45)
-            sky_bottom = (0.3, 0.45, 0.25)
+            sky_horizon = (1.0, 0.78, 0.48)
+            sky_bottom = (0.28, 0.42, 0.22)
             sun_elev = 0.25
             sun_color = (1.0, 0.85, 0.55)
             light_dir = (0.5, -0.6, -0.4)
             light_color = (1.0, 0.85, 0.6)
-            ambient = (0.28, 0.25, 0.22)
-            fog_density = 0.5
-            fog_color = (0.85, 0.7, 0.5)
-            bloom = 0.55
-        # characters on bus
-        billboards = _band_on_bus(bus_pos, bus_yaw, t, mode="travel")
+            ambient = (0.32, 0.30, 0.26)
+            fog_density = 0.12
+            fog_color = (0.85, 0.72, 0.52)
+            bloom = 0.5
+        # Bus only during travel — cutout characters read poorly at this scale
+        billboards = []
 
     elif sid == "istanbul":
         bus_z = -15 + local * 1.4
-        bus_pos = glm.vec3(0.0, 4.6, bus_z)
+        bus_pos = glm.vec3(0.0, 4.0, bus_z)
         bus_yaw = 0.0
-        # 180° arc around bumper into sun
-        ang = math.pi * norm
-        eye = orbit_pos((bus_pos.x, bus_pos.y + 0.8, bus_pos.z + 2.0), 7.0, ang - math.pi * 0.5, height=1.2)
-        camera = _cam(eye, (bus_pos.x, bus_pos.y + 0.9, bus_pos.z + 1.5), fovy=48)
+        # Side-tracking along the bridge so deck + span stay in frame
+        camera = _cam((10.0, 7.0, bus_z - 6.0), (0.0, 4.0, bus_z + 4.0), fovy=40)
         sky_top = (0.35, 0.2, 0.35)
         sky_horizon = (0.95, 0.35, 0.15)
         sky_bottom = (0.55, 0.25, 0.2)
@@ -175,67 +173,61 @@ def evaluate_frame(t: float) -> SceneFrame:
         sun_color = (1.0, 0.45, 0.15)
         light_dir = (0.2, -0.25, -0.9)
         light_color = (1.0, 0.55, 0.3)
-        ambient = (0.25, 0.15, 0.12)
-        fog_density = 0.45
+        ambient = (0.28, 0.18, 0.14)
+        fog_density = 0.12
         fog_color = (0.9, 0.4, 0.25)
-        bloom = 0.65
-        billboards = _band_on_bus(bus_pos, bus_yaw, t, mode="sunglasses")
+        bloom = 0.6
+        billboards = []
         props["balloons"] = 1.0
-        props["cats"] = 1.0
 
     elif sid == "persia":
         bus_z = local * 1.5
-        bus_pos = glm.vec3(0.0, 0.9, bus_z)
-        # low-angle looking up through iwans
-        camera = _cam((-3.0, 0.8, bus_z - 6.0), (0.0, 4.0, bus_z + 4.0), fovy=62)
+        bus_pos = glm.vec3(0.0, 0.0, bus_z)
+        # Low 3/4 looking along the road under the iwans
+        camera = _cam((-5.5, 2.2, bus_z - 8.0), (0.0, 2.5, bus_z + 6.0), fovy=48)
         sky_top = (0.45, 0.65, 0.9)
         sky_horizon = (0.95, 0.7, 0.4)
         sky_bottom = (0.75, 0.5, 0.3)
         sun_elev = 0.7
         light_dir = (0.4, -0.9, 0.1)
         light_color = (1.0, 0.9, 0.7)
-        ambient = (0.35, 0.28, 0.2)
-        fog_density = 0.7
+        ambient = (0.38, 0.32, 0.24)
+        fog_density = 0.18
         fog_color = (0.85, 0.65, 0.4)
-        # rubaiyat kaleidoscope ~ mid chorus
         if 12.0 < local < 28.0:
-            kaleido = smoothstep(12.0, 16.0, local) * (1.0 - smoothstep(24.0, 28.0, local))
-        billboards = _band_on_bus(bus_pos, bus_yaw, t, mode="desert")
-        props["gazelles"] = 1.0
+            kaleido = smoothstep(12.0, 16.0, local) * (1.0 - smoothstep(24.0, 28.0, local)) * 0.65
+        billboards = []
         props["heat_haze"] = 0.5 + 0.5 * math.sin(t * 2.0)
 
     elif sid == "khyber":
-        # winding hairpins — bus follows sine path
         path_t = local * 0.35
         bus_x = math.sin(path_t * 0.8) * 3.0
         bus_z = path_t * 4.0
-        bus_yaw = math.cos(path_t * 0.8) * 0.5
-        bus_pos = glm.vec3(bus_x, 0.7, bus_z)
-        # trailing chase cam
-        cam_x = math.sin(path_t * 0.8 - 0.4) * 3.0
-        cam_z = bus_z - 10.0
-        camera = _cam((cam_x + 2.5, 3.5, cam_z), (bus_x, 1.5, bus_z + 2.0), fovy=50)
+        bus_yaw = math.cos(path_t * 0.8) * 0.45
+        bus_pos = glm.vec3(bus_x, 0.0, bus_z)
+        cam_x = math.sin(path_t * 0.8 - 0.35) * 3.0
+        cam_z = bus_z - 9.0
+        camera = _cam((cam_x + 4.0, 4.0, cam_z), (bus_x, 1.2, bus_z + 3.0), fovy=45)
         sky_top = (0.4, 0.6, 0.85)
         sky_horizon = (0.7, 0.75, 0.8)
         sky_bottom = (0.45, 0.35, 0.28)
         sun_elev = 0.8
         light_dir = (0.6, -0.7, -0.2)
         light_color = (1.0, 0.95, 0.8)
-        ambient = (0.2, 0.2, 0.22)
-        fog_density = 0.4
+        ambient = (0.25, 0.25, 0.26)
+        fog_density = 0.12
         fog_color = (0.55, 0.5, 0.45)
         grain = 0.09
-        billboards = _band_on_bus(bus_pos, bus_yaw, t, mode="khyber")
+        billboards = []
         props["trucks"] = 1.0
         props["dust"] = 1.0
 
     elif sid == "varanasi":
         bus_visible = False
-        # skim water then rise
         rise = smoothstep(0.0, 1.0, norm)
-        eye_y = lerp(1.2, 8.0, ease_in_out(rise))
-        eye_z = -10 + local * 0.9
-        camera = _cam((2.0, eye_y, eye_z), (0.0, 2.0 + rise * 3.0, eye_z + 12.0), fovy=52)
+        eye_y = lerp(2.0, 7.0, ease_in_out(rise))
+        eye_z = -8 + local * 0.9
+        camera = _cam((5.0, eye_y, eye_z), (0.0, 1.5 + rise * 2.0, eye_z + 10.0), fovy=48)
         sky_top = (0.55, 0.45, 0.65)
         sky_horizon = (1.0, 0.7, 0.55)
         sky_bottom = (0.85, 0.55, 0.45)
@@ -243,47 +235,43 @@ def evaluate_frame(t: float) -> SceneFrame:
         sun_color = (1.0, 0.7, 0.45)
         light_dir = (0.3, -0.3, -0.8)
         light_color = (1.0, 0.75, 0.55)
-        ambient = (0.3, 0.22, 0.25)
-        fog_density = 1.1
+        ambient = (0.32, 0.25, 0.26)
+        fog_density = 0.25
         fog_color = (0.9, 0.65, 0.55)
-        bloom = 0.7
+        bloom = 0.65
         props["diyas"] = 1.0
         props["boats"] = 1.0
         props["ghats"] = 1.0
         billboards = [
-            {"sprite": "chad", "pos": (4.0, 2.5, 8.0), "size": (2.2, 3.2), "sway": 0.02},
-            {"sprite": "sadhu", "pos": (-3.0, 3.0, 10.0), "size": (1.8, 2.6), "sway": 0.01},
-            {"sprite": "sadhu", "pos": (-6.0, 3.4, 14.0), "size": (1.6, 2.4), "sway": 0.01},
+            {"sprite": "chad", "pos": (3.5, 2.2, 8.0), "size": (2.0, 3.0), "sway": 0.02},
+            {"sprite": "sadhu", "pos": (-2.5, 2.8, 11.0), "size": (1.7, 2.5), "sway": 0.01},
         ]
 
     elif sid == "himalaya":
         bus_visible = False
-        # swooping aerial
-        ang = norm * math.pi * 1.5
-        radius = 35.0 - norm * 10.0
-        eye = orbit_pos((0, 12, 0), radius, ang, height=18.0 - math.sin(norm * math.pi) * 8.0)
-        camera = _cam(eye, (0, 8, 10), fovy=55)
+        ang = norm * math.pi * 1.2
+        radius = 28.0 - norm * 8.0
+        eye = orbit_pos((0, 6, 5), radius, ang, height=12.0 - math.sin(norm * math.pi) * 5.0)
+        camera = _cam(eye, (0, 4, 8), fovy=50)
         sky_top = (0.3, 0.55, 0.9)
         sky_horizon = (0.75, 0.85, 0.95)
         sky_bottom = (0.35, 0.55, 0.35)
         sun_elev = 0.65
         light_color = (1.0, 0.98, 0.95)
-        ambient = (0.35, 0.38, 0.42)
-        fog_density = 0.35
+        ambient = (0.38, 0.40, 0.44)
+        fog_density = 0.1
         fog_color = (0.8, 0.85, 0.9)
-        bloom = 0.5
+        bloom = 0.45
         props["flags"] = 1.0
-        props["eagles"] = 1.0
         props["bridges"] = 1.0
 
     elif sid == "kathmandu":
-        # bus arrives and stops
         arrive = smoothstep(0.0, 0.35, norm)
         bus_z = lerp(-20.0, 2.0, ease_in_out(min(1.0, arrive * 1.2)))
         stopped = norm > 0.35
-        bus_pos = glm.vec3(0.0, 0.55, bus_z)
+        bus_pos = glm.vec3(0.0, 0.0, bus_z)
         bus_visible = True
-        camera = _cam((6.0 - norm * 2.0, 2.0, bus_z - 8.0 + norm * 10.0), (0, 3.5, 5.0), fovy=48)
+        camera = _cam((8.0 - norm * 2.0, 3.5, bus_z - 9.0 + norm * 8.0), (0, 2.0, 4.0), fovy=44)
         sky_top = (0.4, 0.55, 0.8)
         sky_horizon = (0.95, 0.7, 0.45)
         sky_bottom = (0.45, 0.35, 0.3)
@@ -291,14 +279,12 @@ def evaluate_frame(t: float) -> SceneFrame:
         sun_color = (1.0, 0.8, 0.5)
         light_dir = (0.45, -0.55, -0.5)
         light_color = (1.0, 0.85, 0.6)
-        ambient = (0.28, 0.24, 0.2)
-        fog_density = 0.55
+        ambient = (0.30, 0.26, 0.22)
+        fog_density = 0.15
         fog_color = (0.75, 0.6, 0.45)
         props["pagodas"] = 1.0
-        props["pigeons"] = 1.0 if stopped else 0.0
         props["steam"] = 1.0 if stopped else 0.0
         if stopped:
-            # band steps out
             step = smoothstep(0.35, 0.55, norm)
             billboards = [
                 {"sprite": "anthony", "pos": (-2.0 * step, 0.0, 3.0), "size": (1.8, 2.8), "sway": 0.02},
@@ -307,14 +293,13 @@ def evaluate_frame(t: float) -> SceneFrame:
                 {"sprite": "chad", "pos": (3.0 * step, 0.0, 4.5), "size": (1.8, 2.7), "sway": 0.02},
             ]
         else:
-            billboards = _band_on_bus(bus_pos, bus_yaw, t, mode="travel")
+            billboards = []
 
     elif sid == "rooftop":
         bus_visible = False
-        # 360° orbital pan
         ang = norm * math.pi * 2.0
-        eye = orbit_pos((0, 1.2, 0), 6.5, ang, height=2.8)
-        camera = _cam(eye, (0, 1.4, 0), fovy=45)
+        eye = orbit_pos((0, 1.0, 0), 7.5, ang, height=3.2)
+        camera = _cam(eye, (0, 1.3, 0), fovy=42)
         sky_top = (0.35, 0.4, 0.7)
         sky_horizon = (1.0, 0.55, 0.25)
         sky_bottom = (0.55, 0.35, 0.25)
@@ -322,10 +307,10 @@ def evaluate_frame(t: float) -> SceneFrame:
         sun_color = (1.0, 0.55, 0.2)
         light_dir = (0.1, -0.2, -0.95)
         light_color = (1.0, 0.7, 0.4)
-        ambient = (0.25, 0.18, 0.15)
-        fog_density = 0.4
+        ambient = (0.28, 0.20, 0.16)
+        fog_density = 0.1
         fog_color = (0.9, 0.55, 0.35)
-        bloom = 0.85
+        bloom = 0.75
         grain = 0.06
         props["rooftop"] = 1.0
         props["lamps"] = 1.0
@@ -341,9 +326,9 @@ def evaluate_frame(t: float) -> SceneFrame:
     else:  # outro
         bus_visible = False
         pull = ease_in_out(norm)
-        eye = glm.vec3(0, lerp(4.0, 25.0, pull), lerp(20.0, 5.0, pull))
-        target = glm.vec3(0, lerp(6.0, 40.0, pull), 0)
-        camera = _cam(eye, target, fovy=lerp(50, 40, pull))
+        eye = glm.vec3(0, lerp(5.0, 22.0, pull), lerp(22.0, 6.0, pull))
+        target = glm.vec3(0, lerp(5.0, 35.0, pull), 0)
+        camera = _cam(eye, target, fovy=lerp(48, 38, pull))
         sky_top = (0.05, 0.05, 0.15)
         sky_horizon = (0.25, 0.15, 0.35)
         sky_bottom = (0.1, 0.08, 0.18)
@@ -351,14 +336,12 @@ def evaluate_frame(t: float) -> SceneFrame:
         sun_color = (0.6, 0.35, 0.5)
         light_color = (0.4, 0.3, 0.45)
         ambient = (0.1, 0.1, 0.16)
-        fog_density = 0.3
+        fog_density = 0.1
         fog_color = (0.08, 0.06, 0.12)
         stars = True
         bloom = 0.5
         props["everest"] = 1.0
         props["lanterns"] = 1.0
-        # film burn at t=335..336.5 (local from 320)
-        # t=335 → local 15; t=336.5 → local 16.5
         if local >= 15.0:
             film_burn = smoothstep(15.0, 16.5, local)
         if local >= 16.5:
