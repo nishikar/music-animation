@@ -68,7 +68,7 @@ class MeshGPU:
         interleaved = data.interleaved().tobytes()
         self.vbo = ctx.buffer(interleaved)
         self.ibo = ctx.buffer(data.indices.tobytes())
-        # Layout: pos3 n3 uv2 color3 — skip fields stripped by the GLSL linker.
+        # Layout: pos3 n3 uv2 color3 — skip stripped attrs by BYTE count (ModernGL `x` = 1 byte).
         mapping = (("in_pos", 3), ("in_normal", 3), ("in_uv", 2), ("in_color", 3))
         fmt_tokens = []
         attrs = []
@@ -77,7 +77,7 @@ class MeshGPU:
                 fmt_tokens.append(f"{n}f")
                 attrs.append(name)
             else:
-                fmt_tokens.append(f"{n}x")
+                fmt_tokens.append(f"{n * 4}x")
         self.vao = ctx.vertex_array(program, [(self.vbo, " ".join(fmt_tokens), *attrs)], self.ibo)
 
     def render(self) -> None:

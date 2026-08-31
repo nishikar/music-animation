@@ -481,13 +481,65 @@ def pagoda(tiers=3, base=6.0) -> MeshData:
     return merge_meshes(meshes)
 
 
-def ghat_steps(width=30.0, steps=12, step_h=0.4, step_d=1.2, color=(0.55, 0.48, 0.4)) -> MeshData:
+def ghat_steps(width=48.0, steps=12, step_h=0.42, step_d=1.2, color=(0.62, 0.5, 0.4)) -> MeshData:
+    """Stone bathing steps descending toward -X (river), extending along Z."""
     meshes = []
+    stone_a = color
+    stone_b = (color[0] * 0.88, color[1] * 0.88, color[2] * 0.9)
     for i in range(steps):
         y = i * step_h
-        z = i * step_d
-        meshes.append(box(width, step_h, step_d, color if i % 2 == 0 else (color[0] * 0.92, color[1] * 0.92, color[2] * 0.92), (0, y + step_h * 0.5, z)))
+        x = -i * step_d
+        c = stone_a if i % 2 == 0 else stone_b
+        meshes.append(box(step_d * 0.98, step_h * 0.92, width, c, (x - step_d * 0.5, y + step_h * 0.5, 0)))
+    # top promenade (toward road / +X)
+    top_y = steps * step_h
+    meshes.append(box(5.5, 0.3, width + 6, (0.55, 0.44, 0.34), (3.2, top_y + 0.05, 0)))
+    # short wall on promenade edge facing river
+    meshes.append(box(0.25, 0.85, width + 4, (0.48, 0.36, 0.28), (0.6, top_y + 0.5, 0)))
     return merge_meshes(meshes)
+
+
+def river_plane(size=70.0, color=(0.1, 0.32, 0.42)) -> MeshData:
+    """Calm Ganges surface — kept narrow so it stays west of the road."""
+
+    def h(x, z):
+        return 0.03 * math.sin(x * 0.4) * math.cos(z * 0.3)
+
+    def col(x, y, z):
+        t = 0.5 + 0.5 * math.sin(x * 0.2 + z * 0.12)
+        return (
+            color[0] * (0.85 + 0.2 * t),
+            color[1] * (0.9 + 0.15 * t),
+            color[2] * (1.0 + 0.08 * t),
+        )
+
+    return ground_grid(size=size, divisions=64, height_fn=h, color_fn=col)
+
+
+def river_bank(size=80.0) -> MeshData:
+    """Stone/dust bank between road and water."""
+
+    def h(x, z):
+        # gentle slope toward river (-X)
+        return max(0.0, 0.35 - 0.04 * max(0.0, -x))
+
+    def col(x, y, z):
+        return (0.42 + 0.04 * y, 0.34 + 0.03 * y, 0.26)
+
+    return ground_grid(size=size, divisions=80, height_fn=h, color_fn=col)
+
+
+def temple_cluster() -> MeshData:
+    """Small riverside temple / shrine cluster for Varanasi banks."""
+    parts = [
+        box(3.2, 4.5, 3.2, (0.72, 0.55, 0.35), (0, 2.25, 0)),
+        box(4.0, 0.35, 4.0, (0.55, 0.25, 0.18), (0, 4.6, 0)),
+        transform_mesh(sphere(1.1, 10, 14, (0.85, 0.7, 0.35)), (0, 5.5, 0)),
+        box(1.6, 2.8, 1.6, (0.65, 0.48, 0.3), (4.5, 1.4, 1.5)),
+        box(2.0, 0.25, 2.0, (0.5, 0.22, 0.15), (4.5, 2.95, 1.5)),
+        box(1.4, 2.2, 1.4, (0.7, 0.52, 0.32), (-4.0, 1.1, -1.2)),
+    ]
+    return merge_meshes(parts)
 
 
 def boat(length=3.0, color=(0.4, 0.25, 0.12)) -> MeshData:
@@ -643,17 +695,25 @@ def dune_terrain(size=140.0, color=(0.72, 0.48, 0.32)) -> MeshData:
 
 def canyon_walls(length=100.0, height=30.0, gap=12.0, color=(0.45, 0.32, 0.25)) -> MeshData:
     def h(x, z):
-        c = _road_corridor(x, 4.5)
-        wall = max(0.0, abs(x) - 5.2) ** 1.32 * 0.62
-        strata = 0.35 * math.sin(z * 0.12) * c
-        detail = 0.15 * math.sin(x * 0.4) * math.cos(z * 0.35) * c
+        # Wide flat canyon floor for the road, steep walls outside
+        ax = abs(x)
+        if ax < 5.0:
+            return 0.0
+        edge = min(1.0, (ax - 5.0) / 3.5)
+        wall = edge * edge * 18.0
+        strata = 0.55 * math.sin(z * 0.09) * edge
+        detail = 0.25 * math.sin(x * 0.35) * math.cos(z * 0.22) * edge
         return wall + strata + detail
 
     def col(x, y, z):
-        band = 0.04 * math.sin(y * 1.4)
-        return (0.46 + 0.06 * y + band, 0.32 + 0.04 * y, 0.24 + 0.03 * y)
+        band = 0.05 * math.sin(y * 1.1 + z * 0.05)
+        return (
+            min(0.75, 0.42 + 0.04 * y + band),
+            min(0.55, 0.30 + 0.03 * y),
+            min(0.4, 0.22 + 0.02 * y),
+        )
 
-    return ground_grid(size=max(length, 110.0), divisions=180, height_fn=h, color_fn=col)
+    return ground_grid(size=max(length, 120.0), divisions=180, height_fn=h, color_fn=col)
 
 
 def terrace_hills(size=150.0) -> MeshData:

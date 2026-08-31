@@ -378,7 +378,10 @@ out vec3 v_color;
 
 void main() {
     vec3 p = in_pos;
+    // Keep normal attribute live so the linker does not strip it (VAO layout).
+    vec3 n_keep = in_normal;
     p.y += sin(p.x * 2.5 + u_time * 1.8) * 0.03 + cos(p.z * 2.2 + u_time * 1.4) * 0.03;
+    p += n_keep * 0.0;
     vec4 world = u_model * vec4(p, 1.0);
     v_world = world.xyz;
     v_uv = in_uv;

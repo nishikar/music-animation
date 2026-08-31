@@ -108,6 +108,9 @@ class WorldRenderer:
         self.meshes["deciduous"] = MeshGPU(ctx, p, M.deciduous_tree(5.8))
         self.meshes["deciduous2"] = MeshGPU(ctx, p, M.deciduous_tree(4.6, color=(0.28, 0.45, 0.16)))
         self.meshes["ghats"] = MeshGPU(ctx, p, M.ghat_steps())
+        self.meshes["river"] = MeshGPU(ctx, p, M.river_plane())
+        self.meshes["bank"] = MeshGPU(ctx, p, M.river_bank())
+        self.meshes["temple"] = MeshGPU(ctx, p, M.temple_cluster())
         self.meshes["rooftop"] = MeshGPU(
             ctx,
             p,
@@ -372,10 +375,56 @@ class WorldRenderer:
             name = "deciduous" if i % 2 == 0 else "deciduous2"
             self._draw_mesh(name, frame, model_trs(x, 0.0, z, sc, sc, sc))
 
+    def _place_riverside_props(self, bz: float) -> None:
+        """Diyas on ghat steps + boats on the river, locked to bus Z."""
+        n_diya = 120
+        diya = np.zeros((n_diya, 12), np.float32)
+        for i in range(n_diya):
+            step = i % 10
+            row = i // 10
+            # Match ghat at x≈-9.5, steps toward -X
+            diya[i, 0] = -9.5 - 1.2 - step * 1.15
+            diya[i, 1] = 0.35 + step * 0.42
+            diya[i, 2] = bz - 34.0 + row * 6.0 + hash01(i) * 1.2
+            diya[i, 3] = 0.85 + hash01(i + 2) * 0.4
+            diya[i, 4:7] = (1.0, 0.82, 0.35)
+            diya[i, 7] = hash01(i + 4) * 6.28
+        self.inst_diya.set_instances(diya)
+
+        n_boat = 10
+        boat = np.zeros((n_boat, 12), np.float32)
+        for i in range(n_boat):
+            boat[i, 0] = -34.0 - hash01(i) * 6.0
+            boat[i, 1] = 0.0
+            boat[i, 2] = bz - 26.0 + i * 9.0 + hash01(i + 3) * 2.0
+            boat[i, 3] = 1.15 + hash01(i + 5) * 0.45
+            boat[i, 4:7] = (1, 1, 1)
+            boat[i, 7] = 0.15 + hash01(i) * 0.35
+            boat[i, 8] = hash01(i + 6) * 6.28
+        self.inst_boat.set_instances(boat)
+
+    def _draw_oncoming_trucks(self, frame: SceneFrame, bz: float) -> None:
+        """Jingle trucks in the opposite lane, streaming toward the bus."""
+        for i in range(6):
+            cycle = 70.0
+            # Approach from ahead of the bus
+            tz = bz + 8.0 + ((i * 12.0) - (frame.t * 22.0)) % cycle
+            self._draw_billboard(
+                "jingle_truck",
+                (-3.15, 0.06, tz),
+                (5.9, 3.9),
+                frame,
+                face_cam=False,
+                yaw=-math.pi * 0.5,  # opposite lane facing
+            )
+
     def _draw_road(self, frame: SceneFrame, bz: float, y: float = 0.0, yaw: float = 0.0, sx: float = 1.0) -> None:
-        """Tile road segments so the lane never ends in camera view."""
-        for dz in (-90.0, 0.0, 90.0):
-            self._draw_mesh("road", frame, model_trs(frame.bus_pos.x if abs(yaw) > 1e-4 else 0.0, y, bz + dz, sx, 1.0, 1.0, yaw=yaw))
+        """Tile straight road segments centered on the bus. Never yaw the road."""
+        # Snap tiles so dashes appear to scroll under the bus
+        tile = 90.0
+        base = math.floor(bz / tile) * tile
+        for k in (-1, 0, 1, 2):
+            self._draw_mesh("road", frame, model_trs(0.0, y, base + k * tile, sx, 1.0, 1.0))
 
     def _draw_travel(self, frame: SceneFrame) -> None:
         bz = frame.bus_pos.z
@@ -407,43 +456,41 @@ class WorldRenderer:
         elif land == "desert":
             self._draw_mesh("desert", frame, model_trs(0, 0, bz))
             self._draw_road(frame, bz)
-            for zoff in (12, 28, 44):
+            for zoff in (18, 40, 62):
                 self._draw_mesh("iwan", frame, model_trs(0, 0, bz + zoff), tex=self.tex_mosaic)
 
         elif land == "canyon":
-            self._draw_mesh("canyon", frame, model_trs(frame.bus_pos.x * 0.1, 0, bz))
-            self._draw_road(frame, bz, yaw=frame.bus_yaw, sx=0.9)
+            # Terrain + straight road scroll with the bus
+            self._draw_mesh("canyon", frame, model_trs(0, 0, bz))
+            self._draw_road(frame, bz, sx=1.0)
             if frame.props.get("trucks"):
-                for i in range(3):
-                    tz = bz + 20 + i * 22 - (frame.t * 4.5) % 50
-                    self._draw_billboard(
-                        "jingle_truck",
-                        (frame.bus_pos.x - 4.2, 0.08, tz),
-                        (5.6, 3.7),
-                        frame,
-                        face_cam=False,
-                        yaw=frame.bus_yaw + math.pi * 0.5,
-                    )
+                self._draw_oncoming_trucks(frame, bz)
 
         elif land == "river":
-            self._draw_mesh("ghats", frame, model_trs(8, 0, bz + 6, 0.7, 0.7, 0.7))
-            self._draw_mesh("cobble", frame, model_trs(0, 0, bz, 0.5, 1, 1))
+            # Layout (X): river  |  ghats  |  road  |  temples
+            # Keep ground pieces from overlapping the asphalt under the bus
+            self._draw_mesh("river", frame, model_trs(-36.0, -0.3, bz, 0.65, 1.0, 1.3), emissive=0.14)
+            self._draw_mesh("ghats", frame, model_trs(-9.5, 0.0, bz, 1.05, 1.0, 1.25))
+            # Narrow stone apron between road edge and ghat promenade (no giant ground grid)
+            for zoff in (-40, -20, 0, 20, 40):
+                self._draw_mesh(
+                    "cobble",
+                    frame,
+                    model_trs(-5.2, 0.02, bz + zoff, 0.12, 1.0, 0.22),
+                )
             self._draw_road(frame, bz)
-            self.prog_water["u_model"].write(model_trs(-10, 0.05, bz + 4, 0.55, 1, 0.7))
-            self.prog_water["u_time"].value = frame.t
-            self.prog_water["u_light_dir"].value = frame.light_dir
-            self.prog_water["u_cam_world"].value = (frame.camera.eye.x, frame.camera.eye.y, frame.camera.eye.z)
-            self.prog_water["u_fog_color"].value = frame.fog_color
-            self.prog_water["u_fog_density"].value = frame.fog_density
-            self.tex_normal.use(0)
-            self.prog_water["u_normal_map"] = 0
-            self.ctx.disable(moderngl.CULL_FACE)
-            self.water.render()
-            self.ctx.enable(moderngl.CULL_FACE)
+            for i, zoff in enumerate((-32, -16, 0, 16, 32, 48)):
+                sc = 0.65 + (i % 3) * 0.1
+                self._draw_mesh("temple", frame, model_trs(10.5 + (i % 2) * 1.1, 0.0, bz + zoff, sc, sc, sc))
+                if i % 2 == 0:
+                    self._draw_mesh("house", frame, model_trs(15.0, 0.0, bz + zoff + 3, 0.7, 0.85, 0.75))
+            self._draw_mesh("pagoda", frame, model_trs(12.5, 0.0, bz + 24, 0.75, 0.75, 0.75))
+            self._draw_mesh("pagoda2", frame, model_trs(14.0, 0.0, bz - 24, 0.6, 0.6, 0.6))
+            self._draw_mesh("temple", frame, model_trs(-6.0, 5.1, bz + 4, 0.32, 0.32, 0.32))
             if frame.props.get("diyas"):
-                self._draw_instances(self.inst_diya, frame, mode=3, emissive=1.1)
+                self._place_riverside_props(bz)
+                self._draw_instances(self.inst_diya, frame, mode=3, emissive=1.35)
                 self._draw_instances(self.inst_boat, frame, mode=3)
-            self._draw_mesh("pagoda", frame, model_trs(14, 3.5, bz + 12, 0.7, 0.7, 0.7))
 
         elif land == "alpine":
             self._draw_mesh("alpine", frame, model_trs(0, 0, bz))
@@ -455,13 +502,13 @@ class WorldRenderer:
                 self._draw_instances(self.inst_flag, frame, mode=2)
 
         elif land == "city":
-            self._draw_mesh("cobble", frame, model_trs(0, 0, 0))
-            self._draw_road(frame, bz, sx=0.8)
-            self._draw_mesh("pagoda", frame, model_trs(-9, 0, 10))
-            self._draw_mesh("pagoda2", frame, model_trs(10, 0, 7))
-            self._draw_mesh("pagoda", frame, model_trs(1, 0, 18, 0.75, 0.75, 0.75))
+            self._draw_mesh("cobble", frame, model_trs(0, 0, bz))
+            self._draw_road(frame, bz, sx=0.85)
+            self._draw_mesh("pagoda", frame, model_trs(-9, 0, bz + 10))
+            self._draw_mesh("pagoda2", frame, model_trs(10, 0, bz + 7))
+            self._draw_mesh("pagoda", frame, model_trs(1, 0, bz + 18, 0.75, 0.75, 0.75))
             for x in (-13, -5, 5, 13):
-                self._draw_mesh("house", frame, model_trs(x, 0, -5, 0.75, 0.8, 0.9))
+                self._draw_mesh("house", frame, model_trs(x, 0, bz - 5, 0.75, 0.8, 0.9))
 
         self._draw_bus(frame)
         for b in frame.billboards:

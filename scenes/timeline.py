@@ -159,7 +159,7 @@ def evaluate_frame(t: float) -> SceneFrame:
         # Continuous road trip — bus always advances with global time
         trip_t = t - 14.0
         bus_z = trip_t * 1.55
-        bus_y = 0.06
+        bus_y = 0.06 + 0.04 * abs(math.sin(t * 9.0))  # road vibration
         bus_pos = glm.vec3(0.0, bus_y, bus_z)
         bus_yaw = 0.0
         bus_visible = True
@@ -222,39 +222,41 @@ def evaluate_frame(t: float) -> SceneFrame:
             if 12.0 < local < 26.0:
                 kaleido = smoothstep(12.0, 15.0, local) * (1.0 - smoothstep(23.0, 26.0, local)) * 0.45
 
+        elif sid == "varanasi":
+            # Riverside road — bus drives along ghats as landscape scrolls
+            landscape = "river"
+            bus_pos = glm.vec3(0.0, bus_y, bus_z)
+            bus_yaw = 0.0
+            # Camera on temple side, looking across bus toward ghats + river
+            camera = _travel_cam(bus_pos, side=10.5, height=4.4, back=9.0, fovy=36)
+            billboards = _band_on_bus(bus_pos, bus_yaw, t)
+            sky_top = (0.32, 0.26, 0.52)
+            sky_horizon = (1.0, 0.52, 0.32)
+            sky_bottom = (0.7, 0.42, 0.32)
+            sun_elev = 0.06
+            sun_color = (1.0, 0.62, 0.38)
+            light_dir = (0.2, -0.4, -0.85)
+            light_color = (1.0, 0.78, 0.55)
+            ambient = (0.36, 0.3, 0.32)
+            fog_density = 0.055
+            bloom = 0.55
+            grain = 0.022
+            props["diyas"] = 1.0
+
         elif sid == "khyber":
             landscape = "canyon"
-            path = local * 0.3
-            bus_x = math.sin(path * 0.7) * 1.8
-            bus_yaw = math.cos(path * 0.7) * 0.28
-            bus_pos = glm.vec3(bus_x, bus_y, bus_z)
-            camera = _cam(
-                (bus_x + 7.5, 3.8, bus_z - 8.0),
-                (bus_x, 1.2, bus_z + 3.0),
-                fovy=42,
-            )
+            bus_pos = glm.vec3(0.0, bus_y, bus_z)
+            bus_yaw = 0.0
+            camera = _travel_cam(bus_pos, side=9.0, height=4.0, back=9.5, fovy=38)
             billboards = _band_on_bus(bus_pos, bus_yaw, t)
-            sky_top = (0.42, 0.62, 0.88)
-            sky_horizon = (0.75, 0.78, 0.82)
+            sky_top = (0.48, 0.64, 0.9)
+            sky_horizon = (0.88, 0.8, 0.68)
             sky_bottom = (0.5, 0.4, 0.32)
             sun_elev = 0.7
-            ambient = (0.26, 0.26, 0.28)
-            fog_density = 0.06
+            ambient = (0.3, 0.3, 0.32)
+            fog_density = 0.045
+            grain = 0.022
             props["trucks"] = 1.0
-
-        elif sid == "varanasi":
-            # Treat as riverside approach — keep bus on road beside ghats
-            landscape = "river"
-            sky_top = (0.55, 0.42, 0.65)
-            sky_horizon = (1.0, 0.72, 0.55)
-            sky_bottom = (0.85, 0.58, 0.45)
-            sun_elev = 0.12
-            sun_color = (1.0, 0.72, 0.48)
-            light_dir = (0.3, -0.35, -0.8)
-            ambient = (0.32, 0.26, 0.28)
-            fog_density = 0.1
-            bloom = 0.55
-            props["diyas"] = 1.0
 
         elif sid == "himalaya":
             landscape = "alpine"
