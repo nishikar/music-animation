@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.mp4
+*.pyc
+.DS_Store
+.venv/
+venv/
+desecration_smile.mp4
+assets/audio/*.mp3
+assets/audio/*.wav
+!assets/audio/README.txt
