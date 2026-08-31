@@ -171,10 +171,20 @@ void main() {
     float ndl = max(dot(N, normalize(-u_light_dir)), 0.0);
     vec3 lit = v_color * (u_ambient + u_light_color * (ndl * 0.7 + 0.3));
     float emit = u_emissive;
+    float alpha = 1.0;
     if (u_mode == 1) {
-        // star twinkle
-        emit += 0.55 + 0.45 * sin(u_time * 5.0 + v_phase * 20.0);
-        lit = v_color * emit;
+        // Soft glowing star sprite (circular falloff + cross sparkle)
+        vec2 q = v_uv * 2.0 - 1.0;
+        float r = length(q);
+        float core = exp(-r * r * 14.0);
+        float halo = exp(-r * r * 3.2) * 0.55;
+        float spike = exp(-abs(q.x) * 18.0) * exp(-abs(q.y) * 1.8) * 0.35
+                    + exp(-abs(q.y) * 18.0) * exp(-abs(q.x) * 1.8) * 0.35;
+        float shape = core + halo + spike * (1.0 - r);
+        if (shape < 0.02) discard;
+        float tw = 0.65 + 0.35 * sin(u_time * 4.2 + v_phase * 18.0);
+        lit = v_color * (emit + 1.15) * shape * tw;
+        alpha = clamp(shape * 1.4, 0.0, 1.0);
     } else if (u_mode == 3) {
         emit += 0.8 + 0.2 * sin(u_time * 3.0 + v_phase);
         lit += v_color * emit * 0.5;
@@ -183,7 +193,7 @@ void main() {
     float dist = length(v_world);
     float fog = 1.0 - exp(-u_fog_density * dist * dist * 0.00008);
     lit = mix(lit, u_fog_color, clamp(fog, 0.0, 0.85));
-    f_color = vec4(lit, 1.0);
+    f_color = vec4(lit, alpha);
 }
 """
 
@@ -277,11 +287,39 @@ float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
+float hash13(vec3 p) {
+    return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+}
+
+float star_field(vec3 d, float density, float size, float soft) {
+    // Project onto a stable spherical lattice
+    vec2 uv = d.xz / max(0.15, d.y + 0.35);
+    vec2 cell = floor(uv * density);
+    float best = 0.0;
+    for (int j = -1; j <= 1; ++j) {
+        for (int i = -1; i <= 1; ++i) {
+            vec2 g = cell + vec2(float(i), float(j));
+            float rnd = hash(g);
+            if (rnd < 0.72) continue;
+            vec2 center = (g + vec2(hash(g + 17.0), hash(g + 31.0))) / density;
+            float dist = length(uv - center);
+            float mag = mix(0.35, 1.0, hash(g + 9.0));
+            float core = smoothstep(size * mag, size * mag * soft, dist);
+            float tw = 0.55 + 0.45 * sin(u_time * (1.8 + hash(g) * 3.5) + rnd * 40.0);
+            best = max(best, core * mag * tw);
+        }
+    }
+    return best;
+}
+
 void main() {
     vec3 d = normalize(v_dir);
     float h = d.y * 0.5 + 0.5;
     vec3 col = mix(u_bottom, u_horizon, smoothstep(0.0, 0.45, h));
     col = mix(col, u_top, smoothstep(0.45, 1.0, h));
+
+    // Soft atmospheric haze near horizon
+    col += u_horizon * 0.12 * exp(-abs(d.y) * 6.0);
 
     // sun disk
     float elev = clamp(u_sun_elev, -0.2, 1.2);
@@ -290,10 +328,28 @@ void main() {
     float glow = pow(max(dot(d, sun_dir), 0.0), 12.0);
     col += u_sun_color * (sun * 2.5 + glow * 0.45);
 
-    if (u_stars == 1 && d.y > 0.05) {
-        float s = step(0.997, hash(floor(d.xz * 80.0)));
-        float tw = 0.6 + 0.4 * sin(u_time * 3.0 + hash(floor(d.xz * 80.0)) * 40.0);
-        col += vec3(s * tw);
+    if (u_stars == 1 && d.y > -0.02) {
+        float fade = smoothstep(-0.02, 0.18, d.y);
+
+        // Nebula / milky-way veil
+        float band = exp(-pow(d.x * 0.55 + d.z * 0.35, 2.0) * 2.8) * smoothstep(0.0, 0.55, d.y);
+        float n1 = hash13(floor(d * 18.0));
+        float n2 = hash13(floor(d * 42.0 + 3.0));
+        float neb = band * (0.35 + 0.65 * n1) * (0.4 + 0.6 * n2);
+        col += vec3(0.35, 0.22, 0.55) * neb * 0.55 * fade;
+        col += vec3(0.15, 0.25, 0.55) * band * 0.18 * fade;
+
+        // Layered stars: dense faint + bright sparse
+        float s0 = star_field(d, 55.0, 0.014, 0.25);
+        float s1 = star_field(d, 22.0, 0.028, 0.2);
+        float s2 = star_field(d, 9.0, 0.055, 0.15);
+        col += vec3(0.85, 0.9, 1.0) * s0 * 0.55 * fade;
+        col += vec3(0.95, 0.95, 1.0) * s1 * 0.95 * fade;
+        col += vec3(1.0, 0.96, 0.88) * s2 * 1.35 * fade;
+
+        // Occasional warm giant
+        float giant = star_field(d, 4.0, 0.09, 0.12);
+        col += vec3(1.0, 0.85, 0.65) * giant * 1.6 * fade;
     }
     f_color = vec4(col, 1.0);
 }

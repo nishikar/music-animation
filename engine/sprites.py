@@ -1,11 +1,12 @@
-"""Procedural 2D billboard sprite art (characters, VW bus, jingle trucks)."""
+"""Procedural 2D billboard sprite art — production cutouts with soft shading."""
 
 from __future__ import annotations
 
+import math
 from typing import Dict, Tuple
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 
 def _img(w: int, h: int) -> Tuple[Image.Image, ImageDraw.ImageDraw]:
@@ -13,68 +14,122 @@ def _img(w: int, h: int) -> Tuple[Image.Image, ImageDraw.ImageDraw]:
     return im, ImageDraw.Draw(im)
 
 
-def _ellipse(d, box, fill):
-    d.ellipse(box, fill=fill)
+def _soft(im: Image.Image) -> Image.Image:
+    return im.filter(ImageFilter.SMOOTH_MORE)
 
 
-def _rect(d, box, fill):
-    d.rectangle(box, fill=fill)
+def _shade(c: Tuple[int, int, int], k: float) -> Tuple[int, int, int, int]:
+    return (
+        max(0, min(255, int(c[0] * k))),
+        max(0, min(255, int(c[1] * k))),
+        max(0, min(255, int(c[2] * k))),
+        255,
+    )
 
 
-def _poly(d, pts, fill):
-    d.polygon(pts, fill=fill)
-
-
-def make_vw_bus(w: int = 512, h: int = 320) -> np.ndarray:
+def make_vw_bus(w: int = 896, h: int = 512) -> np.ndarray:
     im, d = _img(w, h)
+    cream = (248, 240, 220)
+    orange = (204, 82, 32)
+    chrome = (190, 195, 200)
+    shade = (150, 50, 20)
+
+    d.ellipse([80, 448, 820, 492], fill=(0, 0, 0, 75))
+
     # body
-    cream = (245, 235, 210, 255)
-    orange = (196, 78, 28, 255)
-    chrome = (180, 185, 190, 255)
-    # bottom hull
-    _rect(d, [40, 140, 460, 250], orange)
-    # top
-    _rect(d, [40, 70, 460, 140], cream)
-    # split windshield
-    _rect(d, [50, 80, 120, 135], (120, 170, 200, 220))
-    _rect(d, [125, 80, 195, 135], (120, 170, 200, 220))
-    d.line([(122, 80), (122, 135)], fill=(80, 60, 40, 255), width=4)
-    # side windows
-    for x in (210, 280, 350):
-        _rect(d, [x, 85, x + 55, 130], (100, 150, 180, 200))
-    # rainbow stripes
-    colors = [(220, 40, 40), (240, 140, 30), (240, 220, 50), (40, 180, 70), (40, 100, 220)]
-    y = 145
+    d.rounded_rectangle([56, 230, 840, 410], radius=22, fill=_shade(orange, 1.0))
+    d.rounded_rectangle([56, 108, 840, 242], radius=16, fill=_shade(cream, 1.0))
+    d.rectangle([60, 378, 836, 410], fill=_shade(shade, 1.0))
+    # subtle body highlight
+    d.rectangle([70, 250, 200, 310], fill=(255, 140, 80, 40))
+    d.rectangle([70, 120, 200, 170], fill=(255, 255, 255, 35))
+
+    # split windshield with reflections
+    for x0, x1 in ((82, 200), (214, 332)):
+        d.rounded_rectangle([x0, 126, x1, 222], radius=7, fill=(105, 160, 195, 235))
+        d.polygon([(x0 + 8, 132), (x1 - 18, 132), (x1 - 40, 168), (x0 + 8, 155)], fill=(200, 230, 245, 90))
+    d.line([(207, 126), (207, 222)], fill=(70, 55, 40, 255), width=6)
+
+    for x in (370, 485, 600, 710):
+        d.rounded_rectangle([x, 134, x + 90, 216], radius=6, fill=(95, 150, 185, 215))
+        d.rectangle([x + 8, 142, x + 82, 168], fill=(175, 210, 230, 85))
+
+    colors = [(220, 40, 40), (240, 140, 30), (240, 220, 50), (40, 180, 70), (40, 100, 220), (120, 60, 180)]
+    y = 238
     for c in colors:
-        _rect(d, [40, y, 460, y + 6], (*c, 255))
-        y += 7
-    # flower mandalas
-    for cx, cy in ((240, 190), (330, 200), (400, 185)):
-        _ellipse(d, [cx - 22, cy - 22, cx + 22, cy + 22], (240, 200, 80, 255))
-        _ellipse(d, [cx - 10, cy - 10, cx + 10, cy + 10], (200, 60, 120, 255))
-        for a in range(0, 360, 45):
-            import math
-            px = cx + int(math.cos(math.radians(a)) * 16)
-            py = cy + int(math.sin(math.radians(a)) * 16)
-            _ellipse(d, [px - 5, py - 5, px + 5, py + 5], (80, 160, 220, 255))
-    # wheels
-    for wx in (100, 380):
-        _ellipse(d, [wx - 28, 230, wx + 28, 286], (30, 30, 35, 255))
-        _ellipse(d, [wx - 12, 246, wx + 12, 270], chrome)
-    # roof rack
-    _rect(d, [80, 50, 420, 62], chrome)
-    # duffels / guitars on roof
-    _rect(d, [100, 28, 170, 55], (60, 40, 30, 255))
-    _rect(d, [180, 32, 300, 55], (90, 50, 30, 255))
-    _rect(d, [310, 30, 400, 54], (40, 50, 70, 255))
-    # headlight
-    _ellipse(d, [42, 155, 62, 175], (255, 240, 180, 255))
-    return np.array(im, dtype=np.uint8)
+        d.rectangle([60, y, 836, y + 8], fill=(*c, 255))
+        y += 9
+
+    for cx, cy in ((410, 330), (550, 342), (690, 325)):
+        d.ellipse([cx - 40, cy - 40, cx + 40, cy + 40], fill=(245, 210, 80, 255))
+        for a in range(0, 360, 36):
+            px = cx + int(math.cos(math.radians(a)) * 26)
+            py = cy + int(math.sin(math.radians(a)) * 26)
+            d.ellipse([px - 11, py - 11, px + 11, py + 11], fill=(65, 145, 215, 255))
+        d.ellipse([cx - 14, cy - 14, cx + 14, cy + 14], fill=(210, 55, 120, 255))
+
+    d.rectangle([48, 400, 850, 422], fill=_shade(chrome, 1.0))
+    d.ellipse([64, 250, 100, 286], fill=(255, 240, 170, 255))
+    d.ellipse([72, 258, 92, 278], fill=(255, 255, 220, 255))
+
+    for wx in (185, 680):
+        d.ellipse([wx - 48, 380, wx + 48, 476], fill=(22, 22, 26, 255))
+        d.ellipse([wx - 22, 404, wx + 22, 452], fill=_shade(chrome, 1.0))
+        d.ellipse([wx - 8, 418, wx + 8, 438], fill=(40, 40, 45, 255))
+        for a in range(0, 360, 60):
+            px = wx + int(math.cos(math.radians(a)) * 14)
+            py = 428 + int(math.sin(math.radians(a)) * 14)
+            d.ellipse([px - 3, py - 3, px + 3, py + 3], fill=(120, 120, 125, 255))
+
+    d.rectangle([140, 82, 760, 102], fill=_shade(chrome, 0.95))
+    d.rounded_rectangle([160, 42, 290, 90], radius=7, fill=(70, 45, 30, 255))
+    d.rounded_rectangle([310, 48, 500, 90], radius=7, fill=(95, 55, 32, 255))
+    d.rounded_rectangle([520, 44, 650, 90], radius=7, fill=(45, 55, 75, 255))
+    d.rounded_rectangle([670, 50, 740, 90], radius=5, fill=(60, 40, 25, 255))
+
+    return np.array(_soft(im), dtype=np.uint8)
+
+
+def _face(d, cx, cy, skin, hair, long_hair=False, glasses=False, topi=False, cap=False):
+    skin_t = _shade(skin, 1.0)
+    skin_s = _shade(skin, 0.82)
+    d.rectangle([cx - 12, cy + 30, cx + 12, cy + 52], fill=skin_s)
+    d.ellipse([cx - 36, cy - 42, cx + 36, cy + 36], fill=skin_t)
+    # cheek / nose soft shade
+    d.ellipse([cx - 8, cy + 2, cx + 8, cy + 22], fill=_shade(skin, 0.92))
+
+    if long_hair:
+        d.ellipse([cx - 40, cy - 48, cx + 40, cy + 10], fill=_shade(hair, 1.0))
+        d.rectangle([cx - 42, cy - 6, cx - 26, cy + 62], fill=_shade(hair, 0.95))
+        d.rectangle([cx + 26, cy - 6, cx + 42, cy + 62], fill=_shade(hair, 0.95))
+        d.ellipse([cx - 38, cy - 50, cx + 38, cy - 8], fill=_shade(hair, 1.08 if hair[0] < 200 else 0.95))
+    else:
+        d.ellipse([cx - 38, cy - 50, cx + 38, cy + 6], fill=_shade(hair, 1.0))
+
+    if topi:
+        d.rectangle([cx - 38, cy - 56, cx + 38, cy - 24], fill=(165, 32, 42, 255))
+        for i in range(5):
+            d.rectangle([cx - 30 + i * 13, cy - 52, cx - 22 + i * 13, cy - 28], fill=(230, 190, 55, 255))
+        d.rectangle([cx - 40, cy - 28, cx + 40, cy - 22], fill=(140, 25, 35, 255))
+    if cap:
+        d.ellipse([cx - 38, cy - 48, cx + 38, cy - 10], fill=(32, 32, 38, 255))
+        d.rectangle([cx - 6, cy - 16, cx + 42, cy - 4], fill=(32, 32, 38, 255))
+
+    # eyes with whites
+    d.ellipse([cx - 16, cy - 6, cx - 2, cy + 8], fill=(245, 245, 248, 255))
+    d.ellipse([cx + 2, cy - 6, cx + 16, cy + 8], fill=(245, 245, 248, 255))
+    d.ellipse([cx - 12, cy - 2, cx - 5, cy + 5], fill=(35, 28, 22, 255))
+    d.ellipse([cx + 6, cy - 2, cx + 13, cy + 5], fill=(35, 28, 22, 255))
+    d.arc([cx - 12, cy + 14, cx + 12, cy + 28], 25, 155, fill=(130, 75, 65, 255), width=2)
+    if glasses:
+        d.rectangle([cx - 24, cy - 10, cx - 1, cy + 12], outline=(25, 25, 30, 255), width=3)
+        d.rectangle([cx + 1, cy - 10, cx + 24, cy + 12], outline=(25, 25, 30, 255), width=3)
+        d.line([(cx - 1, cy + 1), (cx + 1, cy + 1)], fill=(25, 25, 30, 255), width=2)
 
 
 def _person(
-    w: int,
-    h: int,
+    w: int = 320,
+    h: int = 480,
     skin=(220, 180, 145),
     hair=(40, 30, 25),
     shirt=(180, 60, 40),
@@ -85,140 +140,127 @@ def _person(
     topi=False,
     scarf=False,
     instrument: str | None = None,
+    jacket=None,
 ) -> np.ndarray:
     im, d = _img(w, h)
     cx = w // 2
-    # legs
-    _rect(d, [cx - 28, h - 90, cx - 5, h - 10], (*pants, 255))
-    _rect(d, [cx + 5, h - 90, cx + 28, h - 10], (*pants, 255))
-    # torso
-    _rect(d, [cx - 35, h - 200, cx + 35, h - 85], (*shirt, 255))
-    # arms
-    _rect(d, [cx - 55, h - 190, cx - 35, h - 110], (*skin, 255))
-    _rect(d, [cx + 35, h - 190, cx + 55, h - 110], (*skin, 255))
-    # head
-    _ellipse(d, [cx - 28, h - 265, cx + 28, h - 205], (*skin, 255))
-    # hair
-    if long_hair:
-        _ellipse(d, [cx - 32, h - 270, cx + 32, h - 230], (*hair, 255))
-        _rect(d, [cx - 34, h - 240, cx - 22, h - 180], (*hair, 255))
-        _rect(d, [cx + 22, h - 240, cx + 34, h - 180], (*hair, 255))
-    else:
-        _ellipse(d, [cx - 30, h - 272, cx + 30, h - 235], (*hair, 255))
-    if cap:
-        _rect(d, [cx - 32, h - 255, cx + 32, h - 240], (30, 30, 35, 255))
-        _rect(d, [cx - 10, h - 240, cx + 34, h - 232], (30, 30, 35, 255))  # brim back
-    if topi:
-        # Dhaka topi — flat top with geometric pattern
-        _rect(d, [cx - 30, h - 278, cx + 30, h - 252], (160, 30, 40, 255))
-        for i in range(5):
-            _rect(d, [cx - 26 + i * 12, h - 274, cx - 18 + i * 12, h - 256], (220, 180, 50, 255))
-    if glasses:
-        _rect(d, [cx - 22, h - 245, cx - 4, h - 232], (20, 20, 25, 230))
-        _rect(d, [cx + 4, h - 245, cx + 22, h - 232], (20, 20, 25, 230))
-        d.line([(cx - 4, h - 238), (cx + 4, h - 238)], fill=(20, 20, 25, 255), width=2)
+    d.ellipse([cx - 58, h - 34, cx + 58, h - 10], fill=(0, 0, 0, 60))
+
+    # legs with crease
+    d.rounded_rectangle([cx - 40, h - 155, cx - 6, h - 22], radius=7, fill=_shade(pants, 1.0))
+    d.rounded_rectangle([cx + 6, h - 155, cx + 40, h - 22], radius=7, fill=_shade(pants, 1.0))
+    d.rectangle([cx - 38, h - 120, cx - 10, h - 116], fill=_shade(pants, 0.75))
+    d.rectangle([cx + 10, h - 120, cx + 38, h - 116], fill=_shade(pants, 0.75))
+    d.ellipse([cx - 44, h - 34, cx - 2, h - 12], fill=(25, 25, 28, 255))
+    d.ellipse([cx + 2, h - 34, cx + 44, h - 12], fill=(25, 25, 28, 255))
+
+    top = jacket or shirt
+    d.rounded_rectangle([cx - 56, h - 300, cx + 56, h - 140], radius=12, fill=_shade(top, 1.0))
+    d.rectangle([cx - 52, h - 290, cx - 20, h - 150], fill=_shade(top, 1.12))
+    if jacket:
+        d.rectangle([cx - 24, h - 288, cx + 24, h - 150], fill=_shade(shirt, 1.0))
+        d.line([(cx, h - 288), (cx, h - 150)], fill=_shade(jacket, 0.7), width=2)
+
+    d.rounded_rectangle([cx - 82, h - 285, cx - 54, h - 165], radius=9, fill=_shade(skin, 1.0))
+    d.rounded_rectangle([cx + 54, h - 285, cx + 82, h - 165], radius=9, fill=_shade(skin, 0.92))
+
+    _face(d, cx, h - 345, skin, hair, long_hair=long_hair, glasses=glasses, topi=topi, cap=cap)
+
     if scarf:
-        _poly(d, [(cx + 20, h - 200), (cx + 70, h - 160), (cx + 55, h - 150), (cx + 25, h - 185)], (220, 140, 40, 255))
+        d.polygon(
+            [(cx + 22, h - 298), (cx + 98, h - 235), (cx + 80, h - 218), (cx + 30, h - 280)],
+            fill=(230, 150, 45, 255),
+        )
+        d.polygon(
+            [(cx + 28, h - 275), (cx + 70, h - 245), (cx + 60, h - 235)],
+            fill=(210, 120, 35, 255),
+        )
+
     if instrument == "bass":
-        _rect(d, [cx - 10, h - 170, cx + 70, h - 140], (20, 20, 25, 255))
-        _ellipse(d, [cx + 50, h - 185, cx + 90, h - 125], (30, 30, 35, 255))
+        d.rounded_rectangle([cx - 6, h - 250, cx + 110, h - 205], radius=5, fill=(22, 22, 26, 255))
+        d.ellipse([cx + 78, h - 275, cx + 140, h - 185], fill=(32, 32, 38, 255))
+        d.ellipse([cx + 100, h - 250, cx + 118, h - 210], fill=(12, 12, 14, 255))
+        d.rectangle([cx + 20, h - 258, cx + 28, h - 198], fill=(180, 180, 185, 255))
     elif instrument == "guitar":
-        _ellipse(d, [cx + 20, h - 180, cx + 75, h - 110], (180, 110, 40, 255))
-        _rect(d, [cx + 45, h - 220, cx + 55, h - 150], (60, 40, 25, 255))
-        _ellipse(d, [cx + 38, h - 160, cx + 58, h - 140], (30, 20, 10, 255))
+        d.ellipse([cx + 35, h - 275, cx + 130, h - 165], fill=(185, 115, 42, 255))
+        d.ellipse([cx + 48, h - 255, cx + 118, h - 185], fill=(150, 90, 35, 255))
+        d.rectangle([cx + 75, h - 335, cx + 90, h - 210], fill=(70, 45, 28, 255))
+        d.ellipse([cx + 68, h - 235, cx + 96, h - 200], fill=(35, 22, 12, 255))
     elif instrument == "tabla":
-        _ellipse(d, [cx - 50, h - 100, cx - 10, h - 55], (140, 90, 50, 255))
-        _ellipse(d, [cx + 10, h - 95, cx + 45, h - 55], (120, 80, 45, 255))
+        d.ellipse([cx - 82, h - 145, cx - 18, h - 80], fill=(150, 95, 55, 255))
+        d.ellipse([cx + 18, h - 140, cx + 78, h - 80], fill=(130, 85, 50, 255))
+        d.ellipse([cx - 68, h - 130, cx - 32, h - 100], fill=(240, 230, 210, 255))
+        d.ellipse([cx + 30, h - 126, cx + 66, h - 98], fill=(240, 230, 210, 255))
     elif instrument == "harmonium":
-        _rect(d, [cx - 50, h - 130, cx + 55, h - 70], (90, 55, 30, 255))
-        for i in range(8):
-            _rect(d, [cx - 45 + i * 12, h - 125, cx - 38 + i * 12, h - 100], (240, 240, 230, 255))
-    return np.array(im, dtype=np.uint8)
+        d.rounded_rectangle([cx - 85, h - 195, cx + 90, h - 110], radius=7, fill=(95, 58, 32, 255))
+        d.rectangle([cx - 80, h - 188, cx + 85, h - 168], fill=(70, 42, 24, 255))
+        for i in range(12):
+            col = (245, 245, 235, 255) if i % 7 else (25, 25, 28, 255)
+            d.rectangle([cx - 72 + i * 13, h - 185, cx - 64 + i * 13, h - 145], fill=col)
+        d.rectangle([cx - 85, h - 110, cx + 90, h - 96], fill=(70, 40, 22, 255))
+        # bellows hint
+        for i in range(4):
+            yy = h - 108 + i * 4
+            d.line([(cx - 70, yy), (cx + 75, yy)], fill=(60, 35, 20, 180), width=1)
+
+    return np.array(_soft(im), dtype=np.uint8)
 
 
-def make_jingle_truck(w: int = 512, h: int = 360) -> np.ndarray:
+def make_jingle_truck(w: int = 800, h: int = 500) -> np.ndarray:
     im, d = _img(w, h)
-    # chassis
-    _rect(d, [30, 180, 480, 280], (30, 80, 140, 255))
-    # cab
-    _rect(d, [30, 100, 160, 220], (200, 40, 50, 255))
-    _rect(d, [45, 110, 140, 160], (100, 160, 200, 220))
-    # wooden crown
-    _poly(d, [(20, 100), (90, 40), (170, 100)], (160, 100, 50, 255))
-    # floral side panels
-    for i in range(6):
-        x = 180 + i * 48
-        _ellipse(d, [x, 200, x + 40, 250], (240, 180, 40, 255))
-        _ellipse(d, [x + 10, 210, x + 30, 240], (200, 40, 120, 255))
-    # peacock mural
-    _ellipse(d, [300, 190, 400, 270], (30, 140, 90, 255))
-    _ellipse(d, [330, 200, 370, 240], (40, 60, 160, 255))
-    # chains
-    for x in range(180, 460, 25):
-        d.line([(x, 280), (x, 310)], fill=(200, 170, 60, 255), width=2)
-        _ellipse(d, [x - 4, 308, x + 4, 320], (180, 150, 50, 255))
-    # wheels
-    for wx in (90, 400):
-        _ellipse(d, [wx - 30, 260, wx + 30, 330], (25, 25, 30, 255))
-        _ellipse(d, [wx - 12, 278, wx + 12, 310], (160, 160, 165, 255))
-    return np.array(im, dtype=np.uint8)
-
-
-def make_pigeon(w: int = 64, h: int = 48) -> np.ndarray:
-    im, d = _img(w, h)
-    _ellipse(d, [10, 18, 45, 40], (140, 140, 150, 255))
-    _ellipse(d, [40, 14, 58, 32], (130, 130, 140, 255))
-    _poly(d, [(5, 25), (20, 10), (30, 22)], (120, 125, 140, 255))
-    return np.array(im, dtype=np.uint8)
-
-
-def make_gazelle(w: int = 160, h: int = 120) -> np.ndarray:
-    im, d = _img(w, h)
-    body = (180, 140, 90, 255)
-    _ellipse(d, [30, 45, 120, 90], body)
-    _ellipse(d, [110, 30, 150, 70], body)
-    _rect(d, [40, 80, 50, 115], body)
-    _rect(d, [100, 80, 110, 115], body)
-    # horns
-    d.line([(130, 30), (125, 5)], fill=(40, 30, 20, 255), width=3)
-    d.line([(140, 30), (145, 5)], fill=(40, 30, 20, 255), width=3)
-    return np.array(im, dtype=np.uint8)
-
-
-def make_cat(w: int = 80, h: int = 60) -> np.ndarray:
-    im, d = _img(w, h)
-    _ellipse(d, [15, 25, 60, 55], (40, 40, 45, 255))
-    _ellipse(d, [50, 15, 75, 40], (40, 40, 45, 255))
-    _poly(d, [(52, 18), (55, 5), (62, 18)], (40, 40, 45, 255))
-    _poly(d, [(62, 18), (70, 5), (74, 18)], (40, 40, 45, 255))
-    return np.array(im, dtype=np.uint8)
-
-
-def make_sadhu(w: int = 180, h: int = 260) -> np.ndarray:
-    return _person(w, h, skin=(210, 170, 130), hair=(230, 230, 235), shirt=(220, 120, 40), pants=(200, 100, 30), long_hair=True)
+    d.ellipse([50, 438, 760, 485], fill=(0, 0, 0, 65))
+    d.rounded_rectangle([48, 240, 760, 395], radius=10, fill=(25, 90, 150, 255))
+    d.rounded_rectangle([48, 130, 255, 300], radius=10, fill=(210, 45, 55, 255))
+    d.rounded_rectangle([70, 148, 235, 228], radius=6, fill=(110, 170, 210, 220))
+    d.polygon([(35, 135), (145, 48), (260, 135)], fill=(170, 110, 55, 255))
+    for i in range(7):
+        x = 280 + i * 62
+        d.ellipse([x, 268, x + 52, 332], fill=(245, 190, 45, 255))
+        d.ellipse([x + 14, 282, x + 40, 320], fill=(210, 45, 120, 255))
+    d.ellipse([470, 250, 620, 370], fill=(35, 150, 100, 255))
+    d.ellipse([510, 275, 580, 345], fill=(45, 70, 170, 255))
+    for x in range(280, 740, 30):
+        d.line([(x, 395), (x, 438)], fill=(210, 180, 70, 255), width=2)
+        d.ellipse([x - 5, 432, x + 5, 448], fill=(190, 160, 55, 255))
+    for wx in (135, 620):
+        d.ellipse([wx - 44, 365, wx + 44, 460], fill=(25, 25, 30, 255))
+        d.ellipse([wx - 16, 392, wx + 16, 436], fill=(165, 165, 170, 255))
+    return np.array(_soft(im), dtype=np.uint8)
 
 
 def build_sprite_atlas() -> Dict[str, np.ndarray]:
     return {
         "vw_bus": make_vw_bus(),
         "jingle_truck": make_jingle_truck(),
-        "anthony": _person(180, 280, hair=(50, 35, 25), shirt=(220, 80, 50), long_hair=True, scarf=True),
-        "chad": _person(180, 280, hair=(30, 30, 30), shirt=(40, 40, 50), pants=(50, 50, 55), cap=True, instrument="tabla"),
-        "flea": _person(180, 280, hair=(30, 25, 20), shirt=(240, 240, 240), pants=(30, 30, 35), instrument="bass"),
-        "john": _person(180, 280, hair=(40, 30, 25), shirt=(60, 80, 100), long_hair=True, instrument="guitar"),
+        "anthony": _person(
+            shirt=(220, 75, 45), pants=(35, 35, 40), long_hair=True, scarf=True, hair=(45, 30, 22)
+        ),
+        "chad": _person(
+            shirt=(45, 45, 55), pants=(50, 50, 58), cap=True, hair=(28, 28, 30), instrument="tabla"
+        ),
+        "flea": _person(
+            shirt=(245, 245, 248), pants=(28, 28, 32), hair=(30, 25, 20), instrument="bass"
+        ),
+        "john": _person(
+            shirt=(55, 85, 110), pants=(40, 40, 48), long_hair=True, hair=(38, 28, 22), instrument="guitar"
+        ),
         "narayan": _person(
-            200,
-            300,
-            skin=(200, 160, 120),
-            hair=(25, 20, 18),
-            shirt=(240, 240, 245),
-            pants=(30, 30, 35),
+            w=360,
+            h=540,
+            skin=(205, 165, 125),
+            hair=(22, 18, 15),
+            shirt=(245, 245, 248),
+            pants=(28, 28, 32),
+            jacket=(40, 40, 45),
             glasses=True,
             topi=True,
             instrument="harmonium",
         ),
-        "pigeon": make_pigeon(),
-        "gazelle": make_gazelle(),
-        "cat": make_cat(),
-        "sadhu": make_sadhu(),
+        "sadhu": _person(
+            skin=(210, 170, 130),
+            hair=(235, 235, 240),
+            shirt=(225, 125, 45),
+            pants=(210, 110, 40),
+            long_hair=True,
+        ),
     }

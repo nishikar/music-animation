@@ -105,6 +105,7 @@ def ground_grid(
     color_a=(0.35, 0.4, 0.28),
     color_b=(0.3, 0.34, 0.24),
     height_fn=None,
+    color_fn=None,
 ) -> MeshData:
     pos, nrm, uvs, cols, idx = _empty()
     step = size / divisions
@@ -115,9 +116,7 @@ def ground_grid(
         for x in range(divisions + 1):
             wx = -half + x * step
             wz = -half + z * step
-            wy = 0.0
-            if height_fn is not None:
-                wy = height_fn(wx, wz)
+            wy = 0.0 if height_fn is None else float(height_fn(wx, wz))
             row.append((wx, wy, wz))
         verts.append(row)
 
@@ -127,8 +126,19 @@ def ground_grid(
             p10 = verts[z][x + 1]
             p11 = verts[z + 1][x + 1]
             p01 = verts[z + 1][x]
-            c = color_a if (x + z) % 2 == 0 else color_b
-            # CCW when viewed from +Y so the topside survives back-face culling
+            if color_fn is not None:
+                mx = 0.25 * (p00[0] + p10[0] + p11[0] + p01[0])
+                my = 0.25 * (p00[1] + p10[1] + p11[1] + p01[1])
+                mz = 0.25 * (p00[2] + p10[2] + p11[2] + p01[2])
+                c = color_fn(mx, my, mz)
+            else:
+                # Soft blend instead of harsh checker
+                t = 0.5 + 0.5 * math.sin(x * 0.35) * math.cos(z * 0.35)
+                c = (
+                    color_a[0] * (1 - t) + color_b[0] * t,
+                    color_a[1] * (1 - t) + color_b[1] * t,
+                    color_a[2] * (1 - t) + color_b[2] * t,
+                )
             _add_quad(
                 pos, nrm, uvs, cols, idx,
                 p00, p01, p11, p10, c,
@@ -143,21 +153,32 @@ def ground_grid(
     )
 
 
-def road_ribbon(length=60.0, width=4.0, color=(0.18, 0.18, 0.2), y=0.02) -> MeshData:
+def road_ribbon(length=110.0, width=5.6, color=(0.14, 0.14, 0.16), y=0.12) -> MeshData:
     pos, nrm, uvs, cols, idx = _empty()
     hl, hw = length * 0.5, width * 0.5
-    # CCW from +Y
     _add_quad(
         pos, nrm, uvs, cols, idx,
         (-hw, y, -hl), (-hw, y, hl), (hw, y, hl), (hw, y, -hl),
         color,
     )
-    stripe = (0.85, 0.75, 0.2)
-    _add_quad(
-        pos, nrm, uvs, cols, idx,
-        (-0.08, y + 0.01, -hl), (-0.08, y + 0.01, hl), (0.08, y + 0.01, hl), (0.08, y + 0.01, -hl),
-        stripe,
-    )
+    stripe = (0.92, 0.82, 0.25)
+    dash, gap = 2.2, 1.6
+    z = -hl + 1.0
+    while z < hl - 1.0:
+        z1 = min(z + dash, hl - 1.0)
+        _add_quad(
+            pos, nrm, uvs, cols, idx,
+            (-0.1, y + 0.02, z), (-0.1, y + 0.02, z1), (0.1, y + 0.02, z1), (0.1, y + 0.02, z),
+            stripe,
+        )
+        z = z1 + gap
+    edge = (0.88, 0.88, 0.9)
+    for s in (-hw + 0.2, hw - 0.2):
+        _add_quad(
+            pos, nrm, uvs, cols, idx,
+            (s - 0.07, y + 0.015, -hl), (s - 0.07, y + 0.015, hl), (s + 0.07, y + 0.015, hl), (s + 0.07, y + 0.015, -hl),
+            edge,
+        )
     return MeshData(np.array(pos, np.float32), np.array(nrm, np.float32), np.array(uvs, np.float32), np.array(cols, np.float32), np.array(idx, np.uint32))
 
 
@@ -166,29 +187,22 @@ def canal(length=40.0, width=8.0, color=(0.15, 0.28, 0.38)) -> MeshData:
 
 
 def gabled_house(w=3.0, d=4.0, h=4.0, brick=(0.55, 0.28, 0.22), roof=(0.35, 0.18, 0.14)) -> MeshData:
-    """Amsterdam-style merchant house built from safe quads."""
+    """Amsterdam-style merchant house with windows and door."""
     body = box(w, h * 0.72, d, brick, (0, h * 0.36, 0))
     pos, nrm, uvs, cols, idx = _empty()
     y0 = h * 0.72
     peak = h * 1.05
     hw, hd = w * 0.55, d * 0.52
-    # roof slopes (two quads)
-    _add_quad(pos, nrm, uvs, cols, idx, (-hw, y0, -hd), (hw, y0, -hd), (0, peak, -hd * 0.2), (0, peak, -hd * 0.2), roof)
-    # fix degenerate — use proper 4 corners for each slope
-    pos, nrm, uvs, cols, idx = _empty()
-    # left slope
     _add_quad(
         pos, nrm, uvs, cols, idx,
         (-hw, y0, -hd), (-hw, y0, hd), (0.0, peak, hd * 0.15), (0.0, peak, -hd * 0.15),
         roof,
     )
-    # right slope
     _add_quad(
         pos, nrm, uvs, cols, idx,
         (hw, y0, hd), (hw, y0, -hd), (0.0, peak, -hd * 0.15), (0.0, peak, hd * 0.15),
         roof,
     )
-    # front / back gables
     _add_tri(pos, nrm, uvs, cols, idx, (-hw, y0, hd), (hw, y0, hd), (0.0, peak, hd * 0.15), roof)
     _add_tri(pos, nrm, uvs, cols, idx, (hw, y0, -hd), (-hw, y0, -hd), (0.0, peak, -hd * 0.15), roof)
     roof_mesh = MeshData(
@@ -198,7 +212,16 @@ def gabled_house(w=3.0, d=4.0, h=4.0, brick=(0.55, 0.28, 0.22), roof=(0.35, 0.18
         np.array(cols, np.float32),
         np.array(idx, np.uint32),
     )
-    return merge_meshes([body, roof_mesh])
+    # Windows / door on front face (+Z)
+    glass = (0.55, 0.7, 0.82)
+    sill = (0.75, 0.7, 0.55)
+    parts = [body, roof_mesh]
+    win_h, win_w = 0.55, 0.45
+    for wx, wy in ((-0.7, 1.5), (0.7, 1.5), (-0.7, 2.4), (0.7, 2.4)):
+        parts.append(box(win_w, win_h, 0.08, glass, (wx, wy, d * 0.51)))
+        parts.append(box(win_w + 0.08, 0.06, 0.1, sill, (wx, wy - win_h * 0.55, d * 0.52)))
+    parts.append(box(0.55, 1.15, 0.1, (0.25, 0.15, 0.1), (0.0, 0.58, d * 0.52)))
+    return merge_meshes(parts)
 
 
 def stone_arch_bridge(span=16.0, width=5.0, color=(0.45, 0.42, 0.38)) -> MeshData:
@@ -227,20 +250,62 @@ def stone_arch_bridge(span=16.0, width=5.0, color=(0.45, 0.42, 0.38)) -> MeshDat
 
 
 def pine_tree(height=6.0, color=(0.12, 0.28, 0.14)) -> MeshData:
-    trunk = box(0.35, height * 0.35, 0.35, (0.35, 0.22, 0.12), (0, height * 0.175, 0))
+    trunk = box(0.32, height * 0.38, 0.32, (0.38, 0.24, 0.14), (0, height * 0.19, 0))
     pos, nrm, uvs, cols, idx = _empty()
-    for i, (y, r) in enumerate([(height * 0.35, 1.8), (height * 0.55, 1.35), (height * 0.75, 0.9)]):
-        for k in range(8):
-            a0 = k * math.pi * 2 / 8
-            a1 = (k + 1) * math.pi * 2 / 8
-            p0 = (0, y + height * 0.22, 0)
-            p1 = (math.cos(a0) * r, y, math.sin(a0) * r)
-            p2 = (math.cos(a1) * r, y, math.sin(a1) * r)
-            shade = 0.85 + 0.15 * (i / 3)
-            c = (color[0] * shade, color[1] * shade, color[2] * shade)
+    layers = [
+        (height * 0.22, 2.35, 0.72),
+        (height * 0.34, 2.05, 0.80),
+        (height * 0.46, 1.70, 0.88),
+        (height * 0.58, 1.30, 0.96),
+        (height * 0.70, 0.92, 1.04),
+        (height * 0.80, 0.58, 1.10),
+        (height * 0.88, 0.28, 1.16),
+    ]
+    for y, r, shade in layers:
+        tip = y + height * 0.14
+        segs = 14
+        for k in range(segs):
+            a0 = k * math.pi * 2 / segs
+            a1 = (k + 1) * math.pi * 2 / segs
+            rr = r * (0.90 + 0.10 * math.sin(k * 2.1 + y))
+            p0 = (0.0, tip, 0.0)
+            p1 = (math.cos(a0) * rr, y, math.sin(a0) * rr)
+            p2 = (math.cos(a1) * rr, y, math.sin(a1) * rr)
+            edge = 0.82 + 0.18 * abs(math.cos(a0 * 0.5))
+            c = (color[0] * shade * edge, color[1] * shade * edge, color[2] * shade * edge)
             _add_tri(pos, nrm, uvs, cols, idx, p0, p1, p2, c)
-    foliage = MeshData(np.array(pos, np.float32), np.array(nrm, np.float32), np.array(uvs, np.float32), np.array(cols, np.float32), np.array(idx, np.uint32))
+    foliage = MeshData(
+        np.array(pos, np.float32),
+        np.array(nrm, np.float32),
+        np.array(uvs, np.float32),
+        np.array(cols, np.float32),
+        np.array(idx, np.uint32),
+    )
     return merge_meshes([trunk, foliage])
+
+
+def deciduous_tree(height=5.5, color=(0.22, 0.42, 0.18)) -> MeshData:
+    """Irregular canopy tree for Europe / town stretches."""
+    trunk = box(0.28, height * 0.42, 0.28, (0.4, 0.26, 0.14), (0, height * 0.21, 0))
+    canopy_y = height * 0.58
+    layers = []
+    blobs = (
+        (1.05, 0.75, -0.05, 0.15, 0.0),
+        (0.85, 0.9, 0.2, -0.25, 0.1),
+        (0.7, 1.0, 0.55, 0.2, -0.15),
+        (0.55, 1.08, 0.85, -0.1, 0.2),
+        (0.95, 0.82, 0.15, 0.35, 0.25),
+        (0.6, 0.95, 0.4, -0.3, -0.2),
+    )
+    for sc, shade, yo, xo, zo in blobs:
+        c = (color[0] * shade, color[1] * shade, color[2] * shade)
+        layers.append(
+            transform_mesh(
+                sphere(height * 0.26 * sc, stacks=9, slices=12, color=c),
+                translate=(xo * height * 0.12, canopy_y + yo * height * 0.18, zo * height * 0.12),
+            )
+        )
+    return merge_meshes([trunk] + layers)
 
 
 def iwan_arch(width=10.0, height=16.0, depth=4.0) -> MeshData:
@@ -490,56 +555,123 @@ def sphere(radius=1.0, stacks=16, slices=24, color=(0.8, 0.8, 0.85)) -> MeshData
     return MeshData(np.array(pos, np.float32), np.array(nrm, np.float32), np.array(uvs, np.float32), np.array(cols, np.float32), np.array(idx, np.uint32))
 
 
-def mountain_range(width=120.0, depth=40.0, peaks=7, color=(0.75, 0.8, 0.88), snow=True) -> MeshData:
+def mountain_range(width=140.0, depth=40.0, peaks=9, color=(0.75, 0.8, 0.88), snow=True) -> MeshData:
     def h(x, z):
         n = 0.0
         for i in range(peaks):
-            cx = -width * 0.4 + i * (width * 0.8 / max(peaks - 1, 1))
-            amp = 18.0 + (i % 3) * 8.0
-            n += amp * math.exp(-((x - cx) ** 2) / (80.0 + i * 10) - (z ** 2) / 200.0)
-        return n
+            cx = -width * 0.42 + i * (width * 0.84 / max(peaks - 1, 1))
+            amp = 20.0 + (i % 3) * 9.0
+            n += amp * math.exp(-((x - cx) ** 2) / (70.0 + i * 12) - (z ** 2) / 180.0)
+            n += 1.2 * math.sin(x * 0.08 + i) * math.cos(z * 0.1)
+        return max(0.0, n)
 
-    base = ground_grid(size=width, divisions=48, color_a=color, color_b=(color[0] * 0.85, color[1] * 0.85, color[2] * 0.9), height_fn=h)
-    if snow:
-        # whiten high vertices
-        for i, p in enumerate(base.positions):
-            if p[1] > 12:
-                t = min(1.0, (p[1] - 12) / 10)
-                base.colors[i] = base.colors[i] * (1 - t) + np.array([0.95, 0.96, 0.98]) * t
+    def col(x, y, z):
+        rock = (0.42 + 0.02 * math.sin(x * 0.2), 0.4, 0.38)
+        if y > 14:
+            t = min(1.0, (y - 14) / 12)
+            return (
+                rock[0] * (1 - t) + 0.95 * t,
+                rock[1] * (1 - t) + 0.96 * t,
+                rock[2] * (1 - t) + 0.98 * t,
+            )
+        return (0.48 + 0.02 * y, 0.5 + 0.015 * y, 0.52)
+
+    base = ground_grid(size=width, divisions=96, color_fn=col, height_fn=h)
     return base
 
 
-def dune_terrain(size=100.0, color=(0.72, 0.48, 0.32)) -> MeshData:
+def _road_corridor(x: float, half_width: float = 4.2) -> float:
+    """0 on road, 1 far from road — keeps the driving lane flat."""
+    ax = abs(x)
+    if ax <= half_width:
+        return 0.0
+    return min(1.0, (ax - half_width) / 5.5)
+
+
+def _fbm2(x: float, z: float) -> float:
+    return (
+        1.00 * math.sin(x * 0.045) * math.cos(z * 0.038)
+        + 0.50 * math.sin(x * 0.11 + z * 0.07)
+        + 0.25 * math.sin(x * 0.23 - z * 0.19)
+        + 0.12 * math.sin(x * 0.47 + z * 0.31)
+        + 0.06 * math.sin(x * 0.91 - z * 0.73)
+    )
+
+
+def europe_hills(size=140.0) -> MeshData:
     def h(x, z):
-        return (
-            2.5 * math.sin(x * 0.08) * math.cos(z * 0.06)
-            + 1.2 * math.sin(x * 0.15 + z * 0.1)
-            + 0.4 * math.sin(x * 0.4) * math.cos(z * 0.35)
+        c = _road_corridor(x, 4.0)
+        if c <= 0.0:
+            return 0.0
+        return c * (
+            2.4 * _fbm2(x, z)
+            + 0.55 * math.sin((x * 0.7 + z) * 0.09)
+            + 0.2 * math.sin(x * 0.55) * math.sin(z * 0.4)
         )
 
-    return ground_grid(size=size, divisions=56, color_a=color, color_b=(color[0] * 0.9, color[1] * 0.92, color[2] * 0.95), height_fn=h)
+    def col(x, y, z):
+        soil = 0.04 * math.sin(x * 0.35) * math.cos(z * 0.28)
+        g = 0.28 + 0.1 * math.sin(x * 0.12) + 0.06 * y + soil
+        return (
+            0.16 + 0.05 * y + soil * 0.5,
+            min(0.58, 0.34 + g),
+            0.14 + 0.04 * y,
+        )
+
+    return ground_grid(size=size, divisions=200, height_fn=h, color_fn=col)
 
 
-def canyon_walls(length=80.0, height=30.0, gap=12.0, color=(0.45, 0.32, 0.25)) -> MeshData:
-    left = box(8.0, height, length, color, (-gap * 0.5 - 4.0, height * 0.5, 0))
-    right = box(8.0, height, length, (color[0] * 0.9, color[1] * 0.9, color[2] * 0.95), (gap * 0.5 + 4.0, height * 0.5, 0))
-    floor = box(gap, 0.5, length, (0.4, 0.35, 0.28), (0, 0.25, 0))
-    return merge_meshes([left, right, floor])
-
-
-def terrace_hills(size=80.0) -> MeshData:
+def dune_terrain(size=140.0, color=(0.72, 0.48, 0.32)) -> MeshData:
     def h(x, z):
-        base = 0.15 * x + 3.0 * math.sin(z * 0.05)
-        terr = math.floor((base + z * 0.08) * 0.5) * 1.2
-        return max(0.0, terr + 0.3 * math.sin(x * 0.2))
+        c = _road_corridor(x, 4.2)
+        if c <= 0.0:
+            return 0.0
+        return c * (
+            3.6 * math.sin(x * 0.048 + 0.4) * math.cos(z * 0.036)
+            + 1.6 * math.sin(x * 0.10 - z * 0.06)
+            + 0.7 * math.sin(z * 0.18 + x * 0.05)
+            + 0.25 * math.sin(x * 0.4) * math.cos(z * 0.35)
+        )
 
-    return ground_grid(
-        size=size,
-        divisions=48,
-        color_a=(0.25, 0.45, 0.22),
-        color_b=(0.3, 0.5, 0.25),
-        height_fn=h,
-    )
+    def col(x, y, z):
+        t = min(1.0, max(0.0, y / 4.5))
+        ripple = 0.04 * math.sin(x * 0.5 + z * 0.2)
+        return (0.70 + 0.12 * t + ripple, 0.46 + 0.1 * t, 0.28 + 0.06 * t)
+
+    return ground_grid(size=size, divisions=210, height_fn=h, color_fn=col)
+
+
+def canyon_walls(length=100.0, height=30.0, gap=12.0, color=(0.45, 0.32, 0.25)) -> MeshData:
+    def h(x, z):
+        c = _road_corridor(x, 4.5)
+        wall = max(0.0, abs(x) - 5.2) ** 1.32 * 0.62
+        strata = 0.35 * math.sin(z * 0.12) * c
+        detail = 0.15 * math.sin(x * 0.4) * math.cos(z * 0.35) * c
+        return wall + strata + detail
+
+    def col(x, y, z):
+        band = 0.04 * math.sin(y * 1.4)
+        return (0.46 + 0.06 * y + band, 0.32 + 0.04 * y, 0.24 + 0.03 * y)
+
+    return ground_grid(size=max(length, 110.0), divisions=180, height_fn=h, color_fn=col)
+
+
+def terrace_hills(size=150.0) -> MeshData:
+    def h(x, z):
+        c = _road_corridor(x, 4.5)
+        if c <= 0.0:
+            return 0.0
+        base = c * (2.4 * math.sin(z * 0.038) + 1.4 * math.sin(x * 0.075) + 0.4 * _fbm2(x * 1.2, z))
+        terr = math.floor((abs(x) - 8) * 0.28) * 0.9 if abs(x) > 8 else 0.0
+        return max(0.0, base + max(0.0, terr) * c)
+
+    def col(x, y, z):
+        if y > 7:
+            return (0.86, 0.89, 0.94)
+        patch = 0.03 * math.sin(x * 0.3) * math.cos(z * 0.25)
+        return (0.18 + 0.035 * y + patch, 0.40 + 0.05 * y, 0.16 + 0.02 * y)
+
+    return ground_grid(size=size, divisions=190, height_fn=h, color_fn=col)
 
 
 def merge_meshes(meshes: Sequence[MeshData]) -> MeshData:
