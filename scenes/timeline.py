@@ -302,17 +302,18 @@ def evaluate_frame(t: float) -> SceneFrame:
         ang = norm * math.pi * 2.0
         eye = orbit_pos((0, 1.1, 0), 6.8, ang, height=2.7)
         camera = _cam(eye, (0, 1.45, 0), fovy=40)
-        sky_top = (0.22, 0.28, 0.55)
-        sky_horizon = (0.95, 0.48, 0.22)
-        sky_bottom = (0.42, 0.28, 0.24)
-        sun_elev = 0.02
+        sky_top = (0.05, 0.06, 0.16)
+        sky_horizon = (0.75, 0.35, 0.18)
+        sky_bottom = (0.28, 0.16, 0.14)
+        sun_elev = -0.2
         sun_color = (1.0, 0.55, 0.22)
         light_dir = (0.15, -0.25, -0.95)
         light_color = (1.0, 0.75, 0.48)
         ambient = (0.32, 0.24, 0.2)
-        fog_density = 0.035
-        bloom = 0.58
-        grain = 0.025
+        fog_density = 0.03
+        bloom = 0.52
+        grain = 0.022
+        stars = True
         props["lamps"] = 1.0
         bob = 0.03 * math.sin(t * 3.8)
         billboards = [

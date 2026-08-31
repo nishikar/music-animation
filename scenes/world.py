@@ -480,12 +480,15 @@ class WorldRenderer:
 
         elif frame.landscape == "rooftop":
             self._draw_mesh("rooftop", frame, model_trs(0, 0, 0))
-            # City silhouette stays behind the stage — never intersects characters
-            self._draw_mesh("skyline", frame, model_trs(0, -4.0, -38, 1.1, 0.85, 1.0))
-            self._draw_mesh("pagoda", frame, model_trs(-16, -6, -28, 1.2, 1.2, 1.2))
-            self._draw_mesh("pagoda2", frame, model_trs(14, -6, -26, 1.05, 1.05, 1.05))
-            self._draw_mesh("mountains", frame, model_trs(0, -2, -95, 1.8, 1.4, 1.2))
+            # Soft distant city — keep far behind stage
+            self._draw_mesh("skyline", frame, model_trs(0, -5.5, -48, 1.2, 0.75, 1.0))
+            self._draw_mesh("pagoda", frame, model_trs(-18, -7, -36, 1.35, 1.35, 1.35))
+            self._draw_mesh("pagoda2", frame, model_trs(16, -7, -34, 1.15, 1.15, 1.15))
+            # Thin far ridge only (compressed Z so it cannot intersect stage)
+            self._draw_mesh("mountains", frame, model_trs(0, -6, -110, 2.0, 1.1, 0.55))
             self._draw_instances(self.inst_lamp, frame, mode=3, emissive=1.6)
+            if frame.stars:
+                self._draw_instances(self.inst_star, frame, mode=1, emissive=0.7)
             for b in frame.billboards:
                 self._draw_billboard(b["sprite"], b["pos"], b["size"], frame, sway=b.get("sway", 0.0))
 

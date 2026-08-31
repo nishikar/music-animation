@@ -292,20 +292,22 @@ float hash13(vec3 p) {
 }
 
 float star_field(vec3 d, float density, float size, float soft) {
-    // Project onto a stable spherical lattice
-    vec2 uv = d.xz / max(0.2, d.y + 0.45);
-    vec2 cell = floor(uv * density);
+    // Spherical cell lattice — avoids horizon pile-up from planar projection
+    float lon = atan(d.z, d.x);
+    float lat = asin(clamp(d.y, -1.0, 1.0));
+    vec2 uv = vec2(lon * 0.5 + 1.5707963, lat + 1.5707963) * density;
+    vec2 cell = floor(uv);
     float best = 0.0;
     for (int j = -1; j <= 1; ++j) {
         for (int i = -1; i <= 1; ++i) {
             vec2 g = cell + vec2(float(i), float(j));
             float rnd = hash(g);
-            if (rnd < 0.78) continue;
-            vec2 center = (g + vec2(hash(g + 17.0), hash(g + 31.0))) / density;
+            if (rnd < 0.82) continue;
+            vec2 center = g + vec2(hash(g + 17.0), hash(g + 31.0));
             float dist = length(uv - center);
-            float mag = mix(0.4, 1.0, hash(g + 9.0));
-            float core = exp(-dist * dist / max(1e-6, size * size * mag * mag));
-            float tw = 0.6 + 0.4 * sin(u_time * (1.8 + hash(g) * 3.5) + rnd * 40.0);
+            float mag = mix(0.45, 1.0, hash(g + 9.0));
+            float core = exp(-dist * dist / max(1e-6, size * size * mag * mag * 40.0));
+            float tw = 0.65 + 0.35 * sin(u_time * (1.6 + hash(g) * 3.0) + rnd * 40.0);
             best = max(best, core * mag * tw * soft);
         }
     }
@@ -341,16 +343,16 @@ void main() {
         col += vec3(0.28, 0.18, 0.48) * neb * 0.4 * fade;
         col += vec3(0.12, 0.2, 0.45) * band * 0.12 * fade;
 
-        // Crisp layered stars (small cores, tight falloff)
-        float s0 = star_field(d, 110.0, 0.0045, 0.55);
-        float s1 = star_field(d, 48.0, 0.009, 0.7);
-        float s2 = star_field(d, 18.0, 0.016, 0.85);
-        col += vec3(0.9, 0.93, 1.0) * s0 * 1.1 * fade;
-        col += vec3(0.95, 0.96, 1.0) * s1 * 1.45 * fade;
-        col += vec3(1.0, 0.96, 0.9) * s2 * 1.8 * fade;
+        // Crisp layered stars
+        float s0 = star_field(d, 28.0, 0.35, 0.7);
+        float s1 = star_field(d, 14.0, 0.55, 0.9);
+        float s2 = star_field(d, 7.0, 0.85, 1.1);
+        col += vec3(0.9, 0.93, 1.0) * s0 * 1.2 * fade;
+        col += vec3(0.95, 0.96, 1.0) * s1 * 1.55 * fade;
+        col += vec3(1.0, 0.96, 0.9) * s2 * 1.9 * fade;
 
-        float giant = star_field(d, 6.0, 0.028, 0.9);
-        col += vec3(1.0, 0.92, 0.8) * giant * 1.5 * fade;
+        float giant = star_field(d, 3.2, 1.35, 1.2);
+        col += vec3(1.0, 0.92, 0.8) * giant * 1.6 * fade;
     }
     f_color = vec4(col, 1.0);
 }
