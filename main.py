@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Desecration Smile — ModernGL + Pygame music video engine.
+"""Desecration Smile — SDF raymarcher music video engine.
+
+Advanced FBM terrain + domain-repeated structures (ModernGL).
 
 Preview:  python main.py
           python main.py --preview
@@ -47,7 +49,7 @@ def parse_args(argv=None):
 
 def run_preview(args) -> int:
     width, height = PREVIEW_WIDTH, PREVIEW_HEIGHT
-    app = create_app(width, height, title="Desecration Smile — Preview", headless=False)
+    app = create_app(width, height, title="Desecration Smile — Raymarcher Preview", headless=False)
     world = WorldRenderer(app.ctx, width, height)
     audio_path = ensure_audio()
     clock_audio = AudioClock(audio_path, start_muted=args.no_audio)
