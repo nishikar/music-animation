@@ -347,12 +347,12 @@ void main() {
         float s0 = star_field(d, 32.0, 0.22, 0.55);
         float s1 = star_field(d, 16.0, 0.38, 0.7);
         float s2 = star_field(d, 8.0, 0.6, 0.85);
-        col += vec3(0.88, 0.92, 1.0) * s0 * 0.85 * fade;
-        col += vec3(0.95, 0.96, 1.0) * s1 * 1.15 * fade;
-        col += vec3(1.0, 0.96, 0.9) * s2 * 1.4 * fade;
+        col += vec3(0.88, 0.92, 1.0) * s0 * 1.05 * fade;
+        col += vec3(0.95, 0.96, 1.0) * s1 * 1.35 * fade;
+        col += vec3(1.0, 0.96, 0.9) * s2 * 1.65 * fade;
 
         float giant = star_field(d, 3.5, 0.95, 0.9);
-        col += vec3(1.0, 0.92, 0.8) * giant * 1.15 * fade;
+        col += vec3(1.0, 0.92, 0.8) * giant * 1.35 * fade;
     }
     f_color = vec4(col, 1.0);
 }

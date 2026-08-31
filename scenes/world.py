@@ -345,7 +345,7 @@ class WorldRenderer:
         m = g.scale(m, g.vec3(1.35, 1.35, 1.35))
         p = self.prog_crawl
         p["u_model"].write(mat4_bytes(m))
-        p["u_glow"].value = 1.15
+        p["u_glow"].value = 0.85
         self.tex_crawl.use(0)
         p["u_tex"] = 0
         self.ctx.disable(moderngl.CULL_FACE)
@@ -480,15 +480,14 @@ class WorldRenderer:
 
         elif frame.landscape == "rooftop":
             self._draw_mesh("rooftop", frame, model_trs(0, 0, 0))
-            # Soft distant city — keep far behind stage
-            self._draw_mesh("skyline", frame, model_trs(0, -5.5, -48, 1.2, 0.75, 1.0))
+            # Soft city night — no coarse mountain mesh through stage
+            self._draw_mesh("cobble", frame, model_trs(0, -8.0, -55, 2.4, 1.0, 1.6), alpha=1.0)
+            self._draw_mesh("skyline", frame, model_trs(0, -6.0, -52, 1.35, 0.85, 1.0))
             self._draw_mesh("pagoda", frame, model_trs(-18, -7, -36, 1.35, 1.35, 1.35))
             self._draw_mesh("pagoda2", frame, model_trs(16, -7, -34, 1.15, 1.15, 1.15))
-            # Thin far ridge only (compressed Z so it cannot intersect stage)
-            self._draw_mesh("mountains", frame, model_trs(0, -6, -110, 2.0, 1.1, 0.55))
             self._draw_instances(self.inst_lamp, frame, mode=3, emissive=1.6)
             if frame.stars:
-                self._draw_instances(self.inst_star, frame, mode=1, emissive=0.7)
+                self._draw_instances(self.inst_star, frame, mode=1, emissive=0.85)
             for b in frame.billboards:
                 self._draw_billboard(b["sprite"], b["pos"], b["size"], frame, sway=b.get("sway", 0.0))
 
