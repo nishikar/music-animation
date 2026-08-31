@@ -322,7 +322,16 @@ class WorldRenderer:
         if not frame.bus_visible:
             return
         bp = frame.bus_pos
-        self._draw_billboard("vw_bus", (bp.x, bp.y, bp.z), (7.2, 4.05), frame, sway=0.0, face_cam=True)
+        # Fixed yaw along the road — never camera-face (avoids stretch/clip)
+        self._draw_billboard(
+            "vw_bus",
+            (bp.x, bp.y, bp.z),
+            (7.2, 4.05),
+            frame,
+            sway=0.0,
+            face_cam=False,
+            yaw=frame.bus_yaw + math.pi * 0.5,
+        )
 
     def _draw_crawl(self, frame: SceneFrame) -> None:
         import glm as g
@@ -412,7 +421,8 @@ class WorldRenderer:
                         (frame.bus_pos.x - 4.2, 0.08, tz),
                         (5.6, 3.7),
                         frame,
-                        face_cam=True,
+                        face_cam=False,
+                        yaw=frame.bus_yaw + math.pi * 0.5,
                     )
 
         elif land == "river":
@@ -463,8 +473,7 @@ class WorldRenderer:
         self._draw_sky(frame)
 
         if frame.landscape == "cosmos" or frame.scene_id == "crawl":
-            # Sky shader carries the starfield; sparse instance accents only
-            self._draw_instances(self.inst_star, frame, mode=1, emissive=0.55)
+            # Procedural sky carries the starfield — no oversized instance blobs
             self._draw_crawl(frame)
             if frame.props.get("cloud_deck", 0) > 0.2:
                 self._draw_mesh("cobble", frame, model_trs(0, -8, -25, 2.0, 1, 2.0), alpha=0.5)

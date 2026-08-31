@@ -69,7 +69,7 @@ def _travel_cam(bus: glm.vec3, side: float = 8.5, height: float = 3.6, back: flo
     """Consistent 3/4 chase camera locked to the bus."""
     return _cam(
         (bus.x + side, bus.y + height, bus.z - back),
-        (bus.x, bus.y + 1.15, bus.z + 3.5),
+        (bus.x, bus.y + 1.15, bus.z + 5.0),
         fovy=fovy,
     )
 
@@ -316,11 +316,11 @@ def evaluate_frame(t: float) -> SceneFrame:
         props["lamps"] = 1.0
         bob = 0.03 * math.sin(t * 3.8)
         billboards = [
-            {"sprite": "narayan", "pos": (0.0, bob, 0.0), "size": (2.25, 3.35), "sway": 0.02},
-            {"sprite": "john", "pos": (-2.25, 0.0, 0.9), "size": (1.85, 2.7), "sway": 0.025},
-            {"sprite": "flea", "pos": (2.35, 0.08, 0.6), "size": (1.75, 2.55), "sway": 0.03},
-            {"sprite": "anthony", "pos": (-1.2, 0.0, -1.7), "size": (1.75, 2.55), "sway": 0.02},
-            {"sprite": "chad", "pos": (1.4, 0.0, -1.5), "size": (1.75, 2.55), "sway": 0.025},
+            {"sprite": "narayan", "pos": (0.0, 0.12 + bob, 0.0), "size": (2.25, 3.35), "sway": 0.02},
+            {"sprite": "john", "pos": (-2.25, 0.12, 0.9), "size": (1.85, 2.7), "sway": 0.025},
+            {"sprite": "flea", "pos": (2.35, 0.2, 0.6), "size": (1.75, 2.55), "sway": 0.03},
+            {"sprite": "anthony", "pos": (-1.2, 0.12, -1.7), "size": (1.75, 2.55), "sway": 0.02},
+            {"sprite": "chad", "pos": (1.4, 0.12, -1.5), "size": (1.75, 2.55), "sway": 0.025},
         ]
 
     else:  # outro

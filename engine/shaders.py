@@ -293,20 +293,20 @@ float hash13(vec3 p) {
 
 float star_field(vec3 d, float density, float size, float soft) {
     // Project onto a stable spherical lattice
-    vec2 uv = d.xz / max(0.15, d.y + 0.35);
+    vec2 uv = d.xz / max(0.2, d.y + 0.45);
     vec2 cell = floor(uv * density);
     float best = 0.0;
     for (int j = -1; j <= 1; ++j) {
         for (int i = -1; i <= 1; ++i) {
             vec2 g = cell + vec2(float(i), float(j));
             float rnd = hash(g);
-            if (rnd < 0.72) continue;
+            if (rnd < 0.78) continue;
             vec2 center = (g + vec2(hash(g + 17.0), hash(g + 31.0))) / density;
             float dist = length(uv - center);
-            float mag = mix(0.35, 1.0, hash(g + 9.0));
-            float core = smoothstep(size * mag, size * mag * soft, dist);
-            float tw = 0.55 + 0.45 * sin(u_time * (1.8 + hash(g) * 3.5) + rnd * 40.0);
-            best = max(best, core * mag * tw);
+            float mag = mix(0.4, 1.0, hash(g + 9.0));
+            float core = exp(-dist * dist / max(1e-6, size * size * mag * mag));
+            float tw = 0.6 + 0.4 * sin(u_time * (1.8 + hash(g) * 3.5) + rnd * 40.0);
+            best = max(best, core * mag * tw * soft);
         }
     }
     return best;
@@ -321,35 +321,36 @@ void main() {
     // Soft atmospheric haze near horizon
     col += u_horizon * 0.12 * exp(-abs(d.y) * 6.0);
 
-    // sun disk
-    float elev = clamp(u_sun_elev, -0.2, 1.2);
-    vec3 sun_dir = normalize(vec3(0.35, elev, -0.75));
-    float sun = pow(max(dot(d, sun_dir), 0.0), 180.0);
-    float glow = pow(max(dot(d, sun_dir), 0.0), 12.0);
-    col += u_sun_color * (sun * 2.5 + glow * 0.45);
+    // sun disk (skip for night skies)
+    if (u_sun_elev > -0.05) {
+        float elev = clamp(u_sun_elev, -0.05, 1.2);
+        vec3 sun_dir = normalize(vec3(0.35, elev, -0.75));
+        float sun = pow(max(dot(d, sun_dir), 0.0), 220.0);
+        float glow = pow(max(dot(d, sun_dir), 0.0), 14.0);
+        col += u_sun_color * (sun * 2.2 + glow * 0.35);
+    }
 
     if (u_stars == 1 && d.y > -0.02) {
-        float fade = smoothstep(-0.02, 0.18, d.y);
+        float fade = smoothstep(-0.02, 0.22, d.y);
 
-        // Nebula / milky-way veil
-        float band = exp(-pow(d.x * 0.55 + d.z * 0.35, 2.0) * 2.8) * smoothstep(0.0, 0.55, d.y);
-        float n1 = hash13(floor(d * 18.0));
-        float n2 = hash13(floor(d * 42.0 + 3.0));
-        float neb = band * (0.35 + 0.65 * n1) * (0.4 + 0.6 * n2);
-        col += vec3(0.35, 0.22, 0.55) * neb * 0.55 * fade;
-        col += vec3(0.15, 0.25, 0.55) * band * 0.18 * fade;
+        // Soft milky-way / nebula veil
+        float band = exp(-pow(d.x * 0.55 + d.z * 0.35, 2.0) * 2.8) * smoothstep(0.05, 0.6, d.y);
+        float n1 = hash13(floor(d * 22.0));
+        float n2 = hash13(floor(d * 48.0 + 3.0));
+        float neb = band * (0.3 + 0.7 * n1) * (0.35 + 0.65 * n2);
+        col += vec3(0.28, 0.18, 0.48) * neb * 0.4 * fade;
+        col += vec3(0.12, 0.2, 0.45) * band * 0.12 * fade;
 
-        // Layered stars: dense faint + bright sparse
-        float s0 = star_field(d, 55.0, 0.014, 0.25);
-        float s1 = star_field(d, 22.0, 0.028, 0.2);
-        float s2 = star_field(d, 9.0, 0.055, 0.15);
-        col += vec3(0.85, 0.9, 1.0) * s0 * 0.55 * fade;
-        col += vec3(0.95, 0.95, 1.0) * s1 * 0.95 * fade;
-        col += vec3(1.0, 0.96, 0.88) * s2 * 1.35 * fade;
+        # Crisp layered stars (small cores, tight falloff)
+        float s0 = star_field(d, 110.0, 0.0045, 0.55);
+        float s1 = star_field(d, 48.0, 0.009, 0.7);
+        float s2 = star_field(d, 18.0, 0.016, 0.85);
+        col += vec3(0.9, 0.93, 1.0) * s0 * 1.1 * fade;
+        col += vec3(0.95, 0.96, 1.0) * s1 * 1.45 * fade;
+        col += vec3(1.0, 0.96, 0.9) * s2 * 1.8 * fade;
 
-        // Occasional warm giant
-        float giant = star_field(d, 4.0, 0.09, 0.12);
-        col += vec3(1.0, 0.85, 0.65) * giant * 1.6 * fade;
+        float giant = star_field(d, 6.0, 0.028, 0.9);
+        col += vec3(1.0, 0.92, 0.8) * giant * 1.5 * fade;
     }
     f_color = vec4(col, 1.0);
 }
