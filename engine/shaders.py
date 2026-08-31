@@ -344,15 +344,15 @@ void main() {
         col += vec3(0.12, 0.2, 0.45) * band * 0.12 * fade;
 
         // Crisp layered stars
-        float s0 = star_field(d, 28.0, 0.35, 0.7);
-        float s1 = star_field(d, 14.0, 0.55, 0.9);
-        float s2 = star_field(d, 7.0, 0.85, 1.1);
-        col += vec3(0.9, 0.93, 1.0) * s0 * 1.2 * fade;
-        col += vec3(0.95, 0.96, 1.0) * s1 * 1.55 * fade;
-        col += vec3(1.0, 0.96, 0.9) * s2 * 1.9 * fade;
+        float s0 = star_field(d, 32.0, 0.22, 0.55);
+        float s1 = star_field(d, 16.0, 0.38, 0.7);
+        float s2 = star_field(d, 8.0, 0.6, 0.85);
+        col += vec3(0.88, 0.92, 1.0) * s0 * 0.85 * fade;
+        col += vec3(0.95, 0.96, 1.0) * s1 * 1.15 * fade;
+        col += vec3(1.0, 0.96, 0.9) * s2 * 1.4 * fade;
 
-        float giant = star_field(d, 3.2, 1.35, 1.2);
-        col += vec3(1.0, 0.92, 0.8) * giant * 1.6 * fade;
+        float giant = star_field(d, 3.5, 0.95, 0.9);
+        col += vec3(1.0, 0.92, 0.8) * giant * 1.15 * fade;
     }
     f_color = vec4(col, 1.0);
 }
