@@ -652,7 +652,8 @@ def _fbm2(x: float, z: float) -> float:
 
 def europe_hills(size=140.0) -> MeshData:
     def h(x, z):
-        c = _road_corridor(x, 4.0)
+        # Wide flat shoulder so chase cam at ~x=9 never sits inside a hillside
+        c = _road_corridor(x, 10.0)
         if c <= 0.0:
             return 0.0
         return c * (
@@ -718,11 +719,11 @@ def canyon_walls(length=100.0, height=30.0, gap=12.0, color=(0.45, 0.32, 0.25)) 
 
 def terrace_hills(size=150.0) -> MeshData:
     def h(x, z):
-        c = _road_corridor(x, 4.5)
+        c = _road_corridor(x, 11.0)
         if c <= 0.0:
             return 0.0
         base = c * (2.4 * math.sin(z * 0.038) + 1.4 * math.sin(x * 0.075) + 0.4 * _fbm2(x * 1.2, z))
-        terr = math.floor((abs(x) - 8) * 0.28) * 0.9 if abs(x) > 8 else 0.0
+        terr = math.floor((abs(x) - 12) * 0.28) * 0.9 if abs(x) > 12 else 0.0
         return max(0.0, base + max(0.0, terr) * c)
 
     def col(x, y, z):

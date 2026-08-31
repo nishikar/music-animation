@@ -139,8 +139,8 @@ def evaluate_frame(t: float) -> SceneFrame:
         fog_color = (0.02, 0.02, 0.05)
         bloom = 0.42
         grain = 0.028
-        crawl_offset = local * 1.35
-        # Frontal crawl plate — text fills frame; stars dominate the sky
+        # Slow crawl — full plate readable across the opening
+        crawl_offset = local * 0.55
         if local < 12.0:
             camera = _cam((0.0, 2.2, 9.5), (0.0, 1.0, -4.0), fovy=42)
         else:
@@ -260,33 +260,39 @@ def evaluate_frame(t: float) -> SceneFrame:
 
         elif sid == "himalaya":
             landscape = "alpine"
+            bus_pos = glm.vec3(0.0, bus_y, bus_z)
+            bus_yaw = 0.0
+            # High clear chase — avoid bridge/flag meshes near the lens
+            camera = _travel_cam(bus_pos, side=9.5, height=4.5, back=10.0, fovy=36)
+            billboards = _band_on_bus(bus_pos, bus_yaw, t)
             sky_top = (0.28, 0.52, 0.9)
             sky_horizon = (0.78, 0.86, 0.95)
             sky_bottom = (0.32, 0.5, 0.32)
             sun_elev = 0.6
             ambient = (0.36, 0.38, 0.42)
             fog_density = 0.04
+            grain = 0.022
             props["flags"] = 1.0
 
         else:  # kathmandu arrival
             landscape = "city"
-            arrive = smoothstep(0.0, 0.4, norm)
-            bus_z = lerp(bus_z - 8.0, 2.0, ease_in_out(arrive)) if False else bus_z
-            # Slow to a stop near the end of the scene
-            stop = smoothstep(0.55, 0.85, norm)
-            speed_scale = 1.0 - 0.85 * stop
-            bus_z = (t - 14.0) * 1.55 * (1.0 - 0.5 * stop) 
-            # smoother: freeze near square
-            if norm > 0.7:
-                bus_z = lerp((245 - 14) * 1.55, 1.5, smoothstep(0.7, 0.95, norm))
+            # Smooth arrive + stop without teleporting bus_z
+            stop = smoothstep(0.55, 0.92, norm)
+            bus_z = (t - 14.0) * 1.55
+            # Ease to a park position near the end (no hard jump)
+            park_z = (245.0 - 14.0) * 1.55 + 28.0  # ~settle after arrival window starts
+            if norm > 0.55:
+                bus_z = lerp(bus_z, park_z, stop)
             bus_pos = glm.vec3(0.0, bus_y, bus_z)
-            camera = _travel_cam(bus_pos, side=7.5, height=3.2, back=7.0)
-            if stop > 0.5:
+            bus_yaw = 0.0
+            # Camera stays in open corridor (+X), pagodas stay on -X / far ahead
+            camera = _travel_cam(bus_pos, side=9.5, height=4.0, back=9.0, fovy=38)
+            if stop > 0.45:
                 billboards = [
-                    {"sprite": "anthony", "pos": (-1.8, 0.0, bus_z + 2.5), "size": (1.7, 2.6), "sway": 0.02},
-                    {"sprite": "flea", "pos": (-0.3, 0.0, bus_z + 3.2), "size": (1.6, 2.45), "sway": 0.03},
-                    {"sprite": "john", "pos": (1.4, 0.0, bus_z + 2.8), "size": (1.6, 2.5), "sway": 0.02},
-                    {"sprite": "chad", "pos": (2.8, 0.0, bus_z + 3.5), "size": (1.65, 2.5), "sway": 0.02},
+                    {"sprite": "anthony", "pos": (-2.0, 0.0, bus_z + 3.0), "size": (1.7, 2.6), "sway": 0.02},
+                    {"sprite": "flea", "pos": (-0.4, 0.0, bus_z + 3.6), "size": (1.6, 2.45), "sway": 0.03},
+                    {"sprite": "john", "pos": (1.5, 0.0, bus_z + 3.2), "size": (1.6, 2.5), "sway": 0.02},
+                    {"sprite": "chad", "pos": (2.9, 0.0, bus_z + 3.8), "size": (1.65, 2.5), "sway": 0.02},
                 ]
             else:
                 billboards = _band_on_bus(bus_pos, bus_yaw, t)
@@ -295,8 +301,10 @@ def evaluate_frame(t: float) -> SceneFrame:
             sky_bottom = (0.48, 0.38, 0.32)
             sun_elev = 0.32
             ambient = (0.3, 0.26, 0.22)
-            fog_density = 0.06
+            fog_density = 0.055
+            grain = 0.022
             props["pagodas"] = 1.0
+            props["disembark"] = stop
 
     elif sid == "rooftop":
         bus_visible = False

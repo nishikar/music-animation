@@ -172,15 +172,22 @@ class WorldRenderer:
         self.inst_star.set_instances(data)
 
     def _init_flag_instances(self) -> None:
+        # Placeholder — positions refreshed each frame relative to the bus
+        n = 80
+        data = np.zeros((n, 12), np.float32)
+        self.inst_flag.set_instances(data)
+
+    def _place_flags(self, bz: float) -> None:
         colors = [(0.15, 0.35, 0.85), (0.95, 0.95, 0.95), (0.85, 0.12, 0.12), (0.15, 0.65, 0.25), (0.9, 0.8, 0.15)]
-        n = 160
+        n = 80
         data = np.zeros((n, 12), np.float32)
         for i in range(n):
             strand, idx = i // 5, i % 5
-            data[i, 0] = -18 + strand * 3.2 + idx * 0.65
-            data[i, 1] = 7 + (strand % 3) * 2.2
-            data[i, 2] = -8 + (strand % 6) * 3.5
-            data[i, 3] = 1.15
+            side = -1.0 if strand % 2 == 0 else 1.0
+            data[i, 0] = side * (14.0 + (strand % 3) * 1.8) + idx * 0.5 * side
+            data[i, 1] = 5.0 + (strand % 3) * 1.6
+            data[i, 2] = bz + 20.0 + strand * 3.5
+            data[i, 3] = 1.0
             data[i, 4:7] = colors[idx]
             data[i, 7] = hash01(i) * 6.28
             data[i, 8] = 0.15
@@ -341,11 +348,12 @@ class WorldRenderer:
         from engine.mathutil import mat4_bytes
 
         m = g.mat4(1.0)
-        z = 1.5 - frame.crawl_offset * 0.95
-        y = -5.5 + frame.crawl_offset * 0.55
+        # Gentle Star-Wars crawl — slow rise / recede
+        z = 2.0 - frame.crawl_offset * 0.55
+        y = -4.8 + frame.crawl_offset * 0.32
         m = g.translate(m, g.vec3(0.0, y, z))
-        m = g.rotate(m, g.radians(-32.0), g.vec3(1, 0, 0))
-        m = g.scale(m, g.vec3(1.35, 1.35, 1.35))
+        m = g.rotate(m, g.radians(-28.0), g.vec3(1, 0, 0))
+        m = g.scale(m, g.vec3(1.25, 1.25, 1.25))
         p = self.prog_crawl
         p["u_model"].write(mat4_bytes(m))
         p["u_glow"].value = 0.85
@@ -434,16 +442,19 @@ class WorldRenderer:
             self._draw_mesh("europe", frame, model_trs(0, 0, bz))
             self._draw_road(frame, bz)
             if land == "town":
-                self._draw_deciduous(frame, bz, count=22, dist=8.5)
+                self._draw_deciduous(frame, bz, count=14, dist=13.5)
             else:
-                self._draw_pines(frame, bz, count=30, dist=9.5)
-                self._draw_deciduous(frame, bz, count=12, dist=12.0)
-            self._draw_mesh("mountains", frame, model_trs(0, -1.5, bz - 75, 1.2, 0.9, 1.0))
+                self._draw_pines(frame, bz, count=22, dist=12.5)
+                self._draw_deciduous(frame, bz, count=8, dist=14.0)
+            self._draw_mesh("mountains", frame, model_trs(0, -1.5, bz - 85, 1.2, 0.9, 1.0))
             if land == "town" or frame.props.get("bavaria", 1) < 0.5:
-                for x in (-9.0, 9.0):
-                    for row in range(6):
-                        self._draw_mesh("house", frame, model_trs(x, 0, bz - 12 + row * 6.5, 0.8, 1.0, 0.85))
-                self._draw_mesh("bridge_stone", frame, model_trs(0, 0, bz + 16, 0.95, 0.95, 0.95))
+                # Houses only ahead of the bus and clear of the camera (+X) corridor
+                for row in range(5):
+                    z = bz + 14.0 + row * 7.0
+                    self._draw_mesh("house", frame, model_trs(-12.0, 0, z, 0.85, 1.0, 0.9))
+                    self._draw_mesh("house", frame, model_trs(12.5, 0, z + 2.0, 0.8, 0.95, 0.85))
+                # Stone bridge well ahead — never near the lens
+                self._draw_mesh("bridge_stone", frame, model_trs(0, 0, bz + 48, 0.9, 0.9, 0.9))
 
         elif land == "bridge":
             self._draw_mesh("cobble", frame, model_trs(0, 3.55, bz, 0.25, 1, 1.0))
@@ -460,18 +471,14 @@ class WorldRenderer:
                 self._draw_mesh("iwan", frame, model_trs(0, 0, bz + zoff), tex=self.tex_mosaic)
 
         elif land == "canyon":
-            # Terrain + straight road scroll with the bus
             self._draw_mesh("canyon", frame, model_trs(0, 0, bz))
             self._draw_road(frame, bz, sx=1.0)
             if frame.props.get("trucks"):
                 self._draw_oncoming_trucks(frame, bz)
 
         elif land == "river":
-            # Layout (X): river  |  ghats  |  road  |  temples
-            # Keep ground pieces from overlapping the asphalt under the bus
             self._draw_mesh("river", frame, model_trs(-36.0, -0.3, bz, 0.65, 1.0, 1.3), emissive=0.14)
             self._draw_mesh("ghats", frame, model_trs(-9.5, 0.0, bz, 1.05, 1.0, 1.25))
-            # Narrow stone apron between road edge and ghat promenade (no giant ground grid)
             for zoff in (-40, -20, 0, 20, 40):
                 self._draw_mesh(
                     "cobble",
@@ -495,20 +502,24 @@ class WorldRenderer:
         elif land == "alpine":
             self._draw_mesh("alpine", frame, model_trs(0, 0, bz))
             self._draw_road(frame, bz)
-            self._draw_mesh("mountains", frame, model_trs(0, 2, bz - 80, 1.5, 1.25, 1.1))
-            self._draw_mesh("suspension", frame, model_trs(0, 5, bz + 8, 0.55, 0.55, 0.55))
-            self._draw_pines(frame, bz, count=26, dist=11.0)
+            self._draw_mesh("mountains", frame, model_trs(0, 0, bz - 110, 1.7, 1.35, 0.85))
+            self._draw_pines(frame, bz, count=20, dist=13.0)
             if frame.props.get("flags"):
+                self._place_flags(bz)
                 self._draw_instances(self.inst_flag, frame, mode=2)
 
         elif land == "city":
-            self._draw_mesh("cobble", frame, model_trs(0, 0, bz))
-            self._draw_road(frame, bz, sx=0.85)
-            self._draw_mesh("pagoda", frame, model_trs(-9, 0, bz + 10))
-            self._draw_mesh("pagoda2", frame, model_trs(10, 0, bz + 7))
-            self._draw_mesh("pagoda", frame, model_trs(1, 0, bz + 18, 0.75, 0.75, 0.75))
-            for x in (-13, -5, 5, 13):
-                self._draw_mesh("house", frame, model_trs(x, 0, bz - 5, 0.75, 0.8, 0.9))
+            self._draw_mesh("cobble", frame, model_trs(0, 0, bz, 0.7, 1.0, 0.9))
+            self._draw_road(frame, bz, sx=0.9)
+            # Pagodas stay OFF the camera side (+X) and OFF the road
+            self._draw_mesh("pagoda", frame, model_trs(-14.0, 0, bz + 22, 1.0, 1.0, 1.0))
+            self._draw_mesh("pagoda2", frame, model_trs(-12.0, 0, bz + 40, 0.85, 0.85, 0.85))
+            self._draw_mesh("pagoda", frame, model_trs(-16.0, 0, bz - 8, 0.7, 0.7, 0.7))
+            # Far plaza marker ahead (not beside the lens)
+            self._draw_mesh("pagoda2", frame, model_trs(14.0, 0, bz + 50, 0.9, 0.9, 0.9))
+            for i, x in enumerate((-15.0, -11.0, 12.0, 16.0)):
+                self._draw_mesh("house", frame, model_trs(x, 0, bz + 12 + i * 5, 0.75, 0.8, 0.85))
+                self._draw_mesh("house", frame, model_trs(x, 0, bz + 30 + i * 4, 0.7, 0.75, 0.8))
 
         self._draw_bus(frame)
         for b in frame.billboards:
