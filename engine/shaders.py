@@ -341,7 +341,7 @@ void main() {
         col += vec3(0.28, 0.18, 0.48) * neb * 0.4 * fade;
         col += vec3(0.12, 0.2, 0.45) * band * 0.12 * fade;
 
-        # Crisp layered stars (small cores, tight falloff)
+        // Crisp layered stars (small cores, tight falloff)
         float s0 = star_field(d, 110.0, 0.0045, 0.55);
         float s1 = star_field(d, 48.0, 0.009, 0.7);
         float s2 = star_field(d, 18.0, 0.016, 0.85);
