@@ -369,7 +369,8 @@ class WorldRenderer:
         for i in range(count):
             side = -1.0 if i % 2 == 0 else 1.0
             x = side * (dist + (i % 5) * 1.4 + hash01(i + 20) * 2.0)
-            z = bz - 22.0 + i * 2.6 + hash01(i + 40) * 1.5
+            # Keep trees ahead of the chase camera
+            z = bz + 6.0 + i * 2.8 + hash01(i + 40) * 1.5
             sc = 0.7 + (i % 6) * 0.1 + hash01(i) * 0.15
             name = "pine" if i % 3 else "pine2"
             self._draw_mesh(name, frame, model_trs(x, 0.0, z, sc, sc * (0.95 + hash01(i + 1) * 0.15), sc))
@@ -378,7 +379,7 @@ class WorldRenderer:
         for i in range(count):
             side = -1.0 if i % 2 == 0 else 1.0
             x = side * (dist + (i % 4) * 1.8 + hash01(i + 55) * 1.5)
-            z = bz - 16.0 + i * 3.0
+            z = bz + 8.0 + i * 3.2
             sc = 0.65 + (i % 5) * 0.12
             name = "deciduous" if i % 2 == 0 else "deciduous2"
             self._draw_mesh(name, frame, model_trs(x, 0.0, z, sc, sc, sc))
@@ -511,15 +512,14 @@ class WorldRenderer:
         elif land == "city":
             self._draw_mesh("cobble", frame, model_trs(0, 0, bz, 0.7, 1.0, 0.9))
             self._draw_road(frame, bz, sx=0.9)
-            # Pagodas stay OFF the camera side (+X) and OFF the road
-            self._draw_mesh("pagoda", frame, model_trs(-14.0, 0, bz + 22, 1.0, 1.0, 1.0))
-            self._draw_mesh("pagoda2", frame, model_trs(-12.0, 0, bz + 40, 0.85, 0.85, 0.85))
-            self._draw_mesh("pagoda", frame, model_trs(-16.0, 0, bz - 8, 0.7, 0.7, 0.7))
-            # Far plaza marker ahead (not beside the lens)
-            self._draw_mesh("pagoda2", frame, model_trs(14.0, 0, bz + 50, 0.9, 0.9, 0.9))
-            for i, x in enumerate((-15.0, -11.0, 12.0, 16.0)):
-                self._draw_mesh("house", frame, model_trs(x, 0, bz + 12 + i * 5, 0.75, 0.8, 0.85))
-                self._draw_mesh("house", frame, model_trs(x, 0, bz + 30 + i * 4, 0.7, 0.75, 0.8))
+            # All landmarks ahead of the bus — never behind the chase cam
+            self._draw_mesh("pagoda", frame, model_trs(-14.0, 0, bz + 28, 1.0, 1.0, 1.0))
+            self._draw_mesh("pagoda2", frame, model_trs(-12.5, 0, bz + 48, 0.85, 0.85, 0.85))
+            self._draw_mesh("pagoda", frame, model_trs(15.0, 0, bz + 55, 0.8, 0.8, 0.8))
+            self._draw_mesh("pagoda2", frame, model_trs(-15.5, 0, bz + 70, 0.95, 0.95, 0.95))
+            for i, x in enumerate((-15.0, -11.5, 13.0, 16.5)):
+                self._draw_mesh("house", frame, model_trs(x, 0, bz + 18 + i * 6, 0.75, 0.8, 0.85))
+                self._draw_mesh("house", frame, model_trs(x, 0, bz + 40 + i * 5, 0.7, 0.75, 0.8))
 
         self._draw_bus(frame)
         for b in frame.billboards:
