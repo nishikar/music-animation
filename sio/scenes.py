@@ -12,16 +12,17 @@ from . import BEAT_SEC, GOLD, HEIGHT, MARIGOLD, SCENES, SONG_DURATION, VERMILLIO
 from .audio import AudioAnalysis
 from .geometry import (
     circle_ring,
-    cylinder_wire,
+    detailed_stupa_wire,
     grid_valley,
-    lattice_structure,
     lowpoly_stupa,
     mandala_tiers,
     pagoda_wireframe,
     polyline,
+    prayer_flag_string,
+    prayer_wheel_wire,
     regular_polygon,
     solid_lathe_bell,
-    tea_glass_wire,
+    utah_teapot_wire,
 )
 from .math3d import (
     look_at,
@@ -146,12 +147,13 @@ class SceneManager:
         self.streamers = ParticleStorm(600, "streamers")
         self.p_vbo, self.p_vao = pipeline.make_particle_buffer(2000)
 
-        # Scene 1
+        # Scene 1 — high-detail brass temple bell
         self.valley = pipeline.make_line_mesh(grid_valley(36, 70, scale=1.15))
-        bell_v, bell_i = solid_lathe_bell(40)
+        bell_v, bell_i = solid_lathe_bell(72)
         self.bell = pipeline.make_solid_mesh(bell_v, bell_i)
 
-        # Scene 2
+        # Scene 2 — architectural stupa + spinning ornamental rings
+        self.stupa_core = pipeline.make_line_mesh(detailed_stupa_wire(scale=1.15))
         self.tiers = mandala_tiers()
         self.tier_meshes = []
         for tier in self.tiers:
@@ -173,17 +175,13 @@ class SceneManager:
                 p1 = (math.cos(a) * r * 0.92, -tier["thick"], math.sin(a) * r * 0.92)
                 chunks.append(polyline([p0, p1], tier["color"]))
             self.tier_meshes.append(pipeline.make_line_mesh(np.concatenate(chunks)))
-        fin = [circle_ring(0.18 - i * 0.02, y=i * 0.08, segments=16, color=GOLD) for i in range(6)]
-        fin.append(circle_ring(0.05, y=0.55, segments=12, color=VERMILLION))
-        self.finial = pipeline.make_line_mesh(np.concatenate(fin))
 
-        # Scene 3
+        # Scene 3 — detailed prayer wheels in hex corridor
         hexes = []
         for i in range(40):
             z = -i * 2.2
             c = (0.1, 1.0, 0.55) if i % 2 == 0 else (0.15, 0.85, 1.0)
             hexes.append(vertical_hex_ring(3.2, z=z, color=c, sides=6))
-            # also slightly smaller inner ring for thickness
             hexes.append(vertical_hex_ring(3.05, z=z, color=c, sides=6))
             for s in range(6):
                 a = (s / 6) * math.tau
@@ -191,9 +189,7 @@ class SceneManager:
                 p1 = (math.cos(a) * 3.2, math.sin(a) * 3.2, z - 2.2)
                 hexes.append(polyline([p0, p1], c))
         self.corridor = pipeline.make_line_mesh(np.concatenate(hexes))
-        self.wheel_mesh = pipeline.make_line_mesh(
-            cylinder_wire(0.55, 2.4, segments=20, color=(1.0, 0.78, 0.18), rings=6)
-        )
+        self.wheel_mesh = pipeline.make_line_mesh(prayer_wheel_wire(radius=0.72, height=2.6, segments=36))
         self.wheel_positions = []
         for i in range(24):
             z = -i * 2.2 - 1.0
@@ -205,30 +201,16 @@ class SceneManager:
             [(self.eq_vbo, "3f 3f", "in_pos", "in_color")],
         )
 
-        # Scene 4
-        self.tea = pipeline.make_line_mesh(tea_glass_wire())
-        self.lattice = pipeline.make_line_mesh(lattice_structure())
-        grid = []
-        for x in range(-8, 9):
-            grid.append(polyline([(x, 0, -8), (x, 0, 8)], (1.0, 0.45, 0.1)))
-        for z in range(-8, 9):
-            grid.append(polyline([(-8, 0, z), (8, 0, z)], (1.0, 0.45, 0.1)))
-        for side in (-1, 1):
-            pts = [
-                (side * (3 + i * 0.4), 0.2 + abs(math.sin(i * 0.7)) * 2.2, -6 + i * 0.1)
-                for i in range(20)
-            ]
-            grid.append(polyline(pts, (1.0, 0.15, 0.1)))
-        self.arcade_grid = pipeline.make_line_mesh(np.concatenate(grid))
-        self.banners = [
-            (160.0, 166.0, "YO KURO!", "CHAI TIME"),
-            (166.0, 172.0, "ARCADE SHAKE", "हल्ला मच्चाऊ"),
-            (172.0, 178.0, "MILK TEA", "वार्म अप"),
-            (178.0, 183.0, "SHAKE IT", "झटका दे"),
-            (183.0, 186.0, "OH MY GOD!", "ओ माई गड!"),
-        ]
+        # Scene 4 — single dancing wireframe teapot (no split, no text)
+        self.teapot = pipeline.make_line_mesh(utah_teapot_wire(scale=1.35))
+        floor = []
+        for x in range(-10, 11):
+            floor.append(polyline([(x * 0.55, 0, -8), (x * 0.55, 0, 6)], (1.0, 0.45, 0.12)))
+        for z in range(-8, 7):
+            floor.append(polyline([(-5.5, 0, z * 0.55), (5.5, 0, z * 0.55)], (1.0, 0.55, 0.15)))
+        self.teapot_floor = pipeline.make_line_mesh(np.concatenate(floor))
 
-        # Scene 5
+        # Scene 5 — detailed golden pagoda festival
         self.pagoda = pipeline.make_line_mesh(pagoda_wireframe())
         fairy = []
         rng = random.Random(9)
@@ -268,26 +250,17 @@ class SceneManager:
             )
         self.silhouettes = pipeline.make_line_mesh(np.concatenate(sil))
 
-        # Scene 6
+        # Scene 6 — detailed stupas + cloth prayer flags
         self.ridge = pipeline.make_line_mesh(grid_valley(40, 50, scale=1.3))
         stupas = [
-            lowpoly_stupa(sx, sz, scale=0.7 + i * 0.08)
+            lowpoly_stupa(sx, sz, scale=0.85 + i * 0.1)
             for i, (sx, sz) in enumerate([(-4, -6), (-1.5, -10), (2.5, -8), (5, -14), (-6, -16)])
         ]
         self.stupas = pipeline.make_line_mesh(np.concatenate(stupas))
-        flags = []
-        colors = [(0.2, 0.4, 1), (1, 1, 1), (0.9, 0.1, 0.1), (0.1, 0.7, 0.2), (1, 0.85, 0.1)]
-        for fi in range(5):
-            pts = []
-            for k in range(20):
-                tt = k / 19
-                x = -5 + tt * 10
-                y = 2.2 + math.sin(tt * 8 + fi) * 0.15
-                z = -4 - fi * 1.5
-                pts.append((x, y, z))
-            flags.append(polyline(pts, colors[fi % 5]))
-            flags.append(polyline([(-5, 0, -4 - fi * 1.5), (-5, 2.4, -4 - fi * 1.5)], (0.4, 0.25, 0.1)))
-            flags.append(polyline([(5, 0, -4 - fi * 1.5), (5, 2.4, -4 - fi * 1.5)], (0.4, 0.25, 0.1)))
+        flags = [
+            prayer_flag_string(-5.0, -4.0 - fi * 1.5, 5.0, -4.0 - fi * 1.5, y=2.4, n_flags=11, sway=fi * 0.7)
+            for fi in range(5)
+        ]
         self.flags = pipeline.make_line_mesh(np.concatenate(flags))
 
     def _mvp(self, view, model=None):
@@ -402,20 +375,35 @@ class SceneManager:
         )
         local = t - 41.0
         bounce = 1.0 + audio.amp * 0.12 + abs(math.sin(local * math.pi / BEAT_SEC)) * 0.05
-        view = look_at((0.0, 7.5 + math.sin(local * 0.3) * 0.4, 7.5), (0.0, 1.2, 0.0))
+        view = look_at(
+            (math.sin(local * 0.18) * 1.2, 5.8 + math.sin(local * 0.3) * 0.35, 8.2),
+            (0.0, 1.6, 0.0),
+        )
 
+        # Detailed architectural stupa at the center
+        stupa_model = mul(
+            translate(0, 0.05, 0),
+            rotate_y(local * 0.12),
+            scale(bounce * 0.95),
+        )
+        pipe.draw_lines(
+            self.stupa_core,
+            self._mvp(view, stupa_model),
+            time=t,
+            pulse=0.55 + audio.bass * 0.45,
+        )
+
+        # Counter-rotating ornamental mandala tiers around the stupa
         for i, (tier, mesh) in enumerate(zip(self.tiers, self.tier_meshes)):
             direction = 1 if i % 2 == 0 else -1
-            ang = local * (0.6 + i * 0.08) * direction + audio.mid * 0.4 * direction
+            ang = local * (0.55 + i * 0.08) * direction + audio.mid * 0.4 * direction
             expand = bounce * (1.0 + 0.04 * math.sin(local * 3 + i) + audio.bass * 0.05)
             model = mul(
-                translate(0, tier["y"] * bounce, 0),
+                translate(0, tier["y"] * bounce + 0.35, 0),
                 rotate_y(ang),
                 scale(expand, 1.0, expand),
             )
             pipe.draw_lines(mesh, self._mvp(view, model), time=t, pulse=audio.bass)
-        fin_model = mul(translate(0, self.tiers[-1]["y"] * bounce + 0.2, 0), scale(bounce))
-        pipe.draw_lines(self.finial, self._mvp(view, fin_model), pulse=audio.treble)
 
         self.marigold.update(1 / 60, boost=audio.amp)
         if audio.beat:
@@ -478,54 +466,72 @@ class SceneManager:
         pipe.bloom_strength = 0.95
 
     def _render_chai(self, t, audio: AudioAnalysis):
+        """Full-frame dancing wireframe teapot — no split view, no text banners."""
         pipe = self.pipe
-        pipe.begin_scene((0.02, 0.01, 0.04, 1))
+        self.active_banner = None
+        pipe.begin_scene((0.015, 0.01, 0.03, 1))
         pipe.draw_background(
-            top=(0.05, 0.02, 0.08),
-            mid=(0.12, 0.04, 0.02),
-            bot=(0.02, 0.01, 0.03),
-            star_amount=0.15,
+            top=(0.04, 0.015, 0.07),
+            mid=(0.1, 0.035, 0.03),
+            bot=(0.02, 0.01, 0.025),
+            star_amount=0.25,
             time=t,
         )
         local = t - 158.0
 
         if 183.0 <= t < 185.5:
-            self.shake_amp = max(self.shake_amp, 0.025)
+            self.shake_amp = max(self.shake_amp, 0.02)
             if audio.beat or t < 183.4:
-                self.shake_amp = 0.04
+                self.shake_amp = 0.032
         self.shake_amp *= 0.86
         pipe.shake = [
             math.sin(t * 55) * self.shake_amp,
             math.cos(t * 62) * self.shake_amp * 0.8,
         ]
 
-        w2 = WIDTH // 2
-        self.ctx.scissor = (0, 0, w2, HEIGHT)
-        view = look_at((0.0, 1.2, 3.2), (0.0, 0.7, 0.0))
-        pipe.draw_lines(self.arcade_grid, self._mvp(view), pulse=0.3)
-        wobble = math.sin(local * 3.2) * 0.15 + audio.mid * 0.1
-        tilt = math.sin(local * 2.1) * 0.2
-        model = mul(translate(0, 0.1, 0), rotate_z(wobble), rotate_x(tilt * 0.3), scale(1.1))
-        pipe.draw_lines(self.tea, self._mvp(view, model), time=t, pulse=audio.amp)
-
-        self.ctx.scissor = (w2, 0, WIDTH - w2, HEIGHT)
-        eye2 = (
-            math.cos(local * 0.7) * 3.2,
-            1.2 + math.sin(local * 0.5) * 0.4,
-            math.sin(local * 0.7) * 3.2,
+        cam_ang = local * 0.42
+        eye = (
+            math.cos(cam_ang) * 4.6,
+            2.1 + 0.35 * math.sin(local * 0.55),
+            math.sin(cam_ang) * 4.6,
         )
-        view2 = look_at(eye2, (0, 0.2, 0))
-        lm = mul(rotate_y(local * 0.9), rotate_x(local * 0.3), scale(1.2))
-        pipe.draw_lines(self.lattice, self._mvp(view2, lm), pulse=audio.treble)
+        view = look_at(eye, (0.0, 1.05, 0.0))
 
-        self.ctx.scissor = None
-        pipe.bloom_strength = 0.95
-        pipe.exposure = 1.45
+        pipe.draw_lines(self.teapot_floor, self._mvp(view), pulse=0.25 + audio.bass * 0.2)
 
-        for a, b, en, np_text in self.banners:
-            if a <= t < b:
-                self.active_banner = (en, np_text)
-                break
+        bounce = 0.18 * abs(math.sin(local * 2.6)) + 0.14 * (1.0 if audio.beat else 0.0) + 0.08 * audio.bass
+        sway = 0.16 * math.sin(local * 1.8) + 0.08 * audio.mid * math.sin(local * 3.2)
+        spin = local * (1.15 + 0.55 * audio.treble)
+        tilt_x = 0.2 * math.sin(local * 2.15) + 0.1 * (1.0 if audio.beat else 0.0)
+        tilt_z = 0.16 * math.sin(local * 1.6 + 0.4) + sway * 0.45
+        breath = 1.0 + 0.05 * audio.bass + 0.035 * (1.0 if audio.beat else 0.0)
+        model = mul(
+            translate(sway, 0.15 + bounce, 0.0),
+            rotate_y(spin),
+            rotate_x(tilt_x),
+            rotate_z(tilt_z),
+            scale(breath),
+        )
+        pipe.draw_lines(self.teapot, self._mvp(view, model), time=t, pulse=0.75 + audio.amp * 0.5)
+
+        # Rising steam particles from the spout
+        steam = np.zeros((48, 7), dtype=np.float32)
+        for i in range(48):
+            phase = (local * 0.65 + i * 0.09) % 1.0
+            yy = 1.45 + bounce + phase * 2.0
+            xx = sway + 0.7 + 0.18 * math.sin(local * 2.1 + i) * phase
+            zz = 0.12 * math.cos(local * 1.7 + i * 0.4) * phase
+            fade = 1.0 - phase
+            steam[i] = (
+                xx, yy, zz,
+                0.95 * fade, 0.7 * fade + 0.2 * audio.treble, 0.35 * fade,
+                3.5 + 2.5 * fade,
+            )
+        self.p_vbo.write(steam.tobytes())
+        pipe.draw_particles(self.p_vao, 48, self._mvp(view))
+
+        pipe.bloom_strength = 1.0 + audio.amp * 0.35
+        pipe.exposure = 1.35
 
     def _render_pagoda(self, t, audio: AudioAnalysis):
         pipe = self.pipe
