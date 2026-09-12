@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.DS_Store
+shake_it_off.mp3
+shake_it_off_stub.mp3
+shake_it_off.mp4
+*.mp4
+screenshot*.png
+.venv/
