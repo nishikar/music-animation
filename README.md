@@ -52,6 +52,7 @@ python shake_it_off_mv.py --export -o shake_it_off.mp4
 
 ## macOS notes
 
-- Uses an OpenGL 3.3 core profile via Pygame.
-- Install ffmpeg with Homebrew: `brew install ffmpeg`
+- Uses an OpenGL 3.3 **core** profile via Pygame/Cocoa (do **not** set `SDL_VIDEODRIVER=x11`).
+- Install deps: `pip install -r requirements.txt` and `brew install ffmpeg`
+- Run from Terminal.app / iTerm (a normal GUI login session).
 - On Apple Silicon, use a native Python/venv for best performance.

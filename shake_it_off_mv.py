@@ -39,7 +39,7 @@ def parse_args():
     p.add_argument("--export", "-e", action="store_true", help="Export MP4 via ffmpeg")
     p.add_argument("--output", "-o", type=Path, default=ROOT / "shake_it_off.mp4")
     p.add_argument("--audio", type=Path, default=None, help="Path to shake_it_off.mp3")
-    p.add_argument("--no-preview", action="store_true", help="Headless SDL video driver")
+    p.add_argument("--no-preview", action="store_true", help="Request headless SDL (Linux CI only)")
     p.add_argument("--scene", type=str, default=None, help="Force scene id")
     p.add_argument("--start", type=float, default=0.0, help="Start time (seconds)")
     p.add_argument("--duration", type=float, default=None, help="Limit duration")
@@ -49,30 +49,56 @@ def parse_args():
     return p.parse_args()
 
 
-def make_gl_window(width: int, height: int, title: str, headless: bool):
-    # Prefer a real display; fall back to available driver.
+def make_gl_window(width: int, height: int, title: str, headless: bool = False) -> None:
+    """Create a Pygame OpenGL 3.3 core window (macOS / Linux / Windows).
+
+    Never force ``SDL_VIDEODRIVER=x11`` — that breaks Cocoa on macOS and causes
+    ``pygame.error: video system not initialized``.
+    """
+    # Drop a stale Linux-only override if someone exported it in their shell.
+    if sys.platform == "darwin" and os.environ.get("SDL_VIDEODRIVER") in {"x11", "wayland"}:
+        del os.environ["SDL_VIDEODRIVER"]
+
     if headless:
-        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
-    elif not os.environ.get("SDL_VIDEODRIVER"):
-        os.environ.setdefault("SDL_VIDEODRIVER", "x11")
-    pygame.init()
+        has_display = bool(
+            os.environ.get("DISPLAY")
+            or os.environ.get("WAYLAND_DISPLAY")
+            or sys.platform == "darwin"
+        )
+        if has_display:
+            # Still need a real GL context for screenshots/export.
+            headless = False
+        else:
+            os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+    # Mixer config must happen before pygame.init().
     try:
         pygame.mixer.pre_init(44100, -16, 2, 1024)
-        pygame.mixer.init()
     except pygame.error:
         pass
+
+    pygame.init()
+    if not pygame.display.get_init():
+        pygame.display.init()
+
     pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3)
     pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 3)
     pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
     pygame.display.gl_set_attribute(pygame.GL_DOUBLEBUFFER, 1)
+    if hasattr(pygame, "GL_CONTEXT_FORWARD_COMPATIBLE_FLAG"):
+        pygame.display.gl_set_attribute(
+            pygame.GL_CONTEXT_FLAGS, pygame.GL_CONTEXT_FORWARD_COMPATIBLE_FLAG
+        )
+
     try:
         pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)
-    except pygame.error:
-        # Last resort: try without forcing dummy earlier
-        if headless:
-            raise
-        os.environ["SDL_VIDEODRIVER"] = "x11"
-        pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)
+    except pygame.error as exc:
+        raise RuntimeError(
+            "Failed to create an OpenGL window.\n"
+            "On macOS: run from Terminal.app/iTerm (GUI session), and do not set "
+            "SDL_VIDEODRIVER=x11.\n"
+            f"Original error: {exc}"
+        ) from exc
     pygame.display.set_caption(title)
 
 
@@ -122,7 +148,9 @@ def apply_hud(rgb: bytes, t: float, fps_val: float, scene: str, banner, enabled:
     font = pygame.font.SysFont("dejavusansmono", 18)
     big = pygame.font.SysFont("dejavusansmono", 28, bold=True)
     if enabled:
-        for i, line in enumerate((f"SHAKE IT OFF | {scene.upper()}", f"t={t:06.2f}  fps={fps_val:5.1f}")):
+        for i, line in enumerate(
+            (f"SHAKE IT OFF | {scene.upper()}", f"t={t:06.2f}  fps={fps_val:5.1f}")
+        ):
             img = font.render(line, True, (240, 240, 255))
             surf.blit(img, (12, 10 + i * 22))
     if banner:
@@ -138,12 +166,10 @@ def apply_hud(rgb: bytes, t: float, fps_val: float, scene: str, banner, enabled:
 
 def main():
     args = parse_args()
-    headless = bool(args.no_preview or args.screenshot_at is not None)
-    # OpenGL on dummy driver fails — for screenshots/export use x11 when available
-    if headless and os.environ.get("DISPLAY"):
-        headless = False
-        os.environ["SDL_VIDEODRIVER"] = "x11"
-    make_gl_window(WIDTH, HEIGHT, "Shake It Off — Himalayan Synthwave", headless=headless)
+    # Only attempt dummy video when explicitly requested; macOS always needs Cocoa GL.
+    make_gl_window(
+        WIDTH, HEIGHT, "Shake It Off — Himalayan Synthwave", headless=bool(args.no_preview)
+    )
 
     import moderngl
 
@@ -205,7 +231,11 @@ def main():
         else:
             if playing_music:
                 pos = pygame.mixer.music.get_pos()
-                t = (pos / 1000.0 + args.start) if pos >= 0 else args.start + (time.perf_counter() - start_wall)
+                t = (
+                    (pos / 1000.0 + args.start)
+                    if pos >= 0
+                    else args.start + (time.perf_counter() - start_wall)
+                )
             else:
                 t = args.start + (time.perf_counter() - start_wall)
             if t >= args.start + duration:
@@ -218,10 +248,15 @@ def main():
         if recorder is not None:
             rgb = pipe.read_rgb()
             if args.hud or scenes.active_banner:
-                rgb = apply_hud(rgb, t, FPS, force or scene_id_at(t), scenes.active_banner, args.hud)
+                rgb = apply_hud(
+                    rgb, t, FPS, force or scene_id_at(t), scenes.active_banner, args.hud
+                )
             recorder.write(rgb)
             if frame % 30 == 0:
-                print(f"export {t:6.2f}s / {args.start + duration:.1f}s  scene={force or scene_id_at(t)}")
+                print(
+                    f"export {t:6.2f}s / {args.start + duration:.1f}s  "
+                    f"scene={force or scene_id_at(t)}"
+                )
         else:
             pipe.blit_to_screen()
             pygame.display.flip()
