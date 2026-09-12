@@ -422,15 +422,13 @@ def pagoda_wireframe() -> np.ndarray:
             # hanging corner bell
             bx, by, bz = m[0] * 0.92, roof_y - 0.25, m[2] * 0.92
             chunks.append(polyline([(m[0], roof_y, m[2]), (bx, by, bz)], gold))
-            chunks.append(circle_ring(0.08, y=by - 0.05, segments=10, color=gold, z=bz))
-            data = chunks[-1].reshape(-1, 6)
-            data[:, 0] += bx
-            # circle_ring already at z offset via z= — fix by rebuild
-            chunks[-1] = circle_ring(0.08, y=by - 0.05, segments=10, color=gold)
-            data = chunks[-1].reshape(-1, 6)
-            data[:, 0] += bx
-            data[:, 2] += bz
-            chunks[-1] = data.reshape(-1)
+            bell = circle_ring(0.08, y=by - 0.05, segments=12, color=gold)
+            bdata = bell.reshape(-1, 6)
+            bdata[:, 0] += bx
+            bdata[:, 2] += bz
+            chunks.append(bdata.reshape(-1))
+            # small clapper tip
+            chunks.append(polyline([(bx, by - 0.05, bz), (bx, by - 0.18, bz)], dark))
 
         # railing
         chunks.append(box_wire(0, roof_y - 0.15, 0, width * 0.85, 0.12, width * 0.85, gold))
@@ -450,26 +448,43 @@ def lowpoly_stupa(x=0.0, z=0.0, scale=1.0) -> np.ndarray:
     white = (0.94, 0.94, 0.9)
     gold = (1.0, 0.8, 0.22)
     red = (0.88, 0.18, 0.15)
+    blue = (0.25, 0.5, 0.95)
 
-    # plinth
-    chunks.append(box_wire(0, 0.08 * scale, 0, 1.6 * scale, 0.16 * scale, 1.6 * scale, gold))
-    chunks.append(box_wire(0, 0.22 * scale, 0, 1.3 * scale, 0.12 * scale, 1.3 * scale, white))
+    # stepped plinth
+    chunks.append(box_wire(0, 0.06 * scale, 0, 1.8 * scale, 0.12 * scale, 1.8 * scale, gold))
+    chunks.append(box_wire(0, 0.18 * scale, 0, 1.5 * scale, 0.12 * scale, 1.5 * scale, white))
+    chunks.append(box_wire(0, 0.3 * scale, 0, 1.2 * scale, 0.1 * scale, 1.2 * scale, white))
 
     # dome rings + meridians
-    dome = [(0.7, 0.35), (0.85, 0.55), (0.8, 0.8), (0.55, 1.0), (0.28, 1.15), (0.1, 1.25)]
+    dome = [
+        (0.55, 0.4), (0.75, 0.5), (0.88, 0.65), (0.9, 0.82),
+        (0.82, 1.0), (0.62, 1.15), (0.38, 1.28), (0.18, 1.38),
+    ]
     for r, y in dome:
-        chunks.append(circle_ring(r * scale, y=y * scale, segments=28, color=white))
-    for i in range(12):
-        a = (i / 12) * math.tau
+        chunks.append(circle_ring(r * scale, y=y * scale, segments=32, color=white))
+    for i in range(16):
+        a = (i / 16) * math.tau
         pts = [(math.cos(a) * r * scale, y * scale, math.sin(a) * r * scale) for r, y in dome]
-        chunks.append(polyline(pts, white))
+        chunks.append(polyline(pts, white if i % 2 == 0 else (0.85, 0.85, 0.92)))
 
-    # harmika + spire
-    chunks.append(box_wire(0, 1.4 * scale, 0, 0.4 * scale, 0.22 * scale, 0.4 * scale, gold))
-    for i in range(9):
-        w = (0.32 - i * 0.025) * scale
-        chunks.append(box_wire(0, (1.55 + i * 0.07) * scale, 0, w, 0.035 * scale, w, gold))
-    chunks.append(circle_ring(0.08 * scale, y=2.25 * scale, segments=10, color=red))
+    # harmika + painted eyes
+    chunks.append(box_wire(0, 1.5 * scale, 0, 0.45 * scale, 0.28 * scale, 0.45 * scale, gold))
+    for sx in (-0.1, 0.1):
+        eye = circle_ring(0.05 * scale, y=1.52 * scale, segments=8, color=blue, z=0.24 * scale)
+        data = eye.reshape(-1, 6)
+        data[:, 0] += sx * scale
+        chunks.append(data.reshape(-1))
+
+    # 11 umbrella disks
+    for i in range(11):
+        w = (0.36 - i * 0.022) * scale
+        y = (1.7 + i * 0.07) * scale
+        chunks.append(box_wire(0, y, 0, w, 0.03 * scale, w, gold))
+        if i % 2 == 0:
+            chunks.append(circle_ring(w * 0.5, y=y + 0.015 * scale, segments=12, color=red))
+    tip = 1.7 + 11 * 0.07
+    chunks.append(polyline([(0, tip * scale, 0), (0, (tip + 0.22) * scale, 0)], gold))
+    chunks.append(circle_ring(0.07 * scale, y=(tip + 0.25) * scale, segments=10, color=red))
 
     data = _cat(chunks).reshape(-1, 6)
     data[:, 0] += x
@@ -513,25 +528,29 @@ def prayer_flag_string(x0, z0, x1, z1, y=2.3, n_flags=10, sway=0.0) -> np.ndarra
         z = z0 + (z1 - z0) * t
         yy = y + math.sin(t * math.pi) * -0.18 + math.sin(t * 10 + sway) * 0.05
         c = colors[i % 5]
-        fw, fh = 0.3, 0.42
-        flutter = math.sin(sway * 2 + i * 0.9) * 0.08
-        flutter2 = math.cos(sway * 1.5 + i) * 0.05
-        # cloth as a small grid (more fabric-like)
+        fw, fh = 0.42, 0.55
+        flutter = math.sin(sway * 2 + i * 0.9) * 0.12
+        flutter2 = math.cos(sway * 1.5 + i) * 0.08
+        # cloth panel with mid folds (reads as fabric, not a box)
         top_l = (x - fw / 2, yy, z)
         top_r = (x + fw / 2, yy, z)
         bot_l = (x - fw / 2 + flutter, yy - fh, z + flutter2)
-        bot_r = (x + fw / 2 + flutter * 0.7, yy - fh * 0.92, z + flutter2 * 0.6)
-        mid_l = (x - fw / 2 + flutter * 0.4, yy - fh * 0.5, z + flutter2 * 0.4)
-        mid_r = (x + fw / 2 + flutter * 0.35, yy - fh * 0.48, z + flutter2 * 0.35)
+        bot_r = (x + fw / 2 + flutter * 0.7, yy - fh * 0.9, z + flutter2 * 0.6)
+        mid_l = (x - fw / 2 + flutter * 0.45, yy - fh * 0.48, z + flutter2 * 0.4)
+        mid_r = (x + fw / 2 + flutter * 0.4, yy - fh * 0.45, z + flutter2 * 0.35)
         chunks.append(polyline([top_l, top_r, bot_r, bot_l, top_l], c))
         chunks.append(polyline([mid_l, mid_r], c))
+        chunks.append(polyline([top_l, mid_r], c))
+        chunks.append(polyline([top_r, mid_l], c))
+        # hem stitch
+        hem_y = yy - fh * 0.85
         chunks.append(polyline([
-            ((top_l[0] + top_r[0]) / 2, yy, z),
-            ((bot_l[0] + bot_r[0]) / 2, (bot_l[1] + bot_r[1]) / 2, (bot_l[2] + bot_r[2]) / 2),
+            (x - fw / 2 + flutter * 0.85, hem_y, z + flutter2 * 0.85),
+            (x + fw / 2 + flutter * 0.65, hem_y + 0.03, z + flutter2 * 0.55),
         ], c))
-        # hanging thread at corners
-        chunks.append(polyline([bot_l, (bot_l[0], bot_l[1] - 0.06, bot_l[2])], c))
-        chunks.append(polyline([bot_r, (bot_r[0], bot_r[1] - 0.05, bot_r[2])], c))
+        # hanging threads
+        chunks.append(polyline([bot_l, (bot_l[0] + flutter * 0.2, bot_l[1] - 0.1, bot_l[2])], c))
+        chunks.append(polyline([bot_r, (bot_r[0] + flutter * 0.15, bot_r[1] - 0.08, bot_r[2])], c))
     return _cat(chunks)
 
 

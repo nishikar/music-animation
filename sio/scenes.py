@@ -253,14 +253,26 @@ class SceneManager:
         # Scene 6 — detailed stupas + cloth prayer flags
         self.ridge = pipeline.make_line_mesh(grid_valley(40, 50, scale=1.3))
         stupas = [
-            lowpoly_stupa(sx, sz, scale=0.85 + i * 0.1)
-            for i, (sx, sz) in enumerate([(-4, -6), (-1.5, -10), (2.5, -8), (5, -14), (-6, -16)])
+            lowpoly_stupa(sx, sz, scale=sc)
+            for (sx, sz, sc) in [
+                (-3.5, -5.0, 1.15),
+                (-1.0, -8.5, 0.95),
+                (2.2, -6.5, 1.35),
+                (4.8, -11.0, 1.05),
+                (-5.5, -13.0, 0.9),
+                (0.5, -15.5, 1.2),
+                (6.0, -17.0, 0.85),
+            ]
         ]
         self.stupas = pipeline.make_line_mesh(np.concatenate(stupas))
         flags = [
-            prayer_flag_string(-5.0, -4.0 - fi * 1.5, 5.0, -4.0 - fi * 1.5, y=2.4, n_flags=11, sway=fi * 0.7)
-            for fi in range(5)
+            prayer_flag_string(-6.5, -2.2 - fi * 1.6, 6.5, -2.6 - fi * 1.6, y=2.8 + fi * 0.1, n_flags=12, sway=fi * 0.9)
+            for fi in range(6)
         ]
+        # diagonal strings for depth + a near string for scale
+        flags.append(prayer_flag_string(-5.5, -1.2, 5.5, -1.6, y=3.2, n_flags=10, sway=0.4))
+        flags.append(prayer_flag_string(-5.5, -4.0, -1.0, -12.0, y=3.0, n_flags=9, sway=1.2))
+        flags.append(prayer_flag_string(1.5, -5.0, 5.5, -14.0, y=2.8, n_flags=9, sway=2.0))
         self.flags = pipeline.make_line_mesh(np.concatenate(flags))
 
     def _mvp(self, view, model=None):
@@ -340,11 +352,29 @@ class SceneManager:
             self.bell,
             self._mvp(view, model),
             model,
-            light_dir=(0.3, -0.7, 0.4),
-            light_color=(1.0, 0.85, 0.5),
+            light_dir=(0.35, -0.65, 0.45),
+            light_color=(1.0, 0.88, 0.55),
         )
-        hang = self._temp_lines(polyline([(0, 8.5, z - 2), (0, 5.7, z - 2)], (0.2, 0.9, 1.0)))
+        # hanging rope + interior clapper for realism
+        hang = self._temp_lines(polyline([(0, 8.5, z - 2), (0, 5.85, z - 2)], (0.25, 0.92, 1.0)))
         pipe.draw_lines(hang, mvp, pulse=audio.treble)
+        clap_swing = math.sin(t * 6.5 + audio.bass * 4) * 0.18
+        clapper = self._temp_lines(
+            polyline(
+                [
+                    (0.0, 5.2, z - 2),
+                    (clap_swing * 0.4, 4.35, z - 2),
+                    (clap_swing, 3.55, z - 2),
+                ],
+                (0.75, 0.55, 0.15),
+            )
+        )
+        pipe.draw_lines(clapper, mvp, pulse=0.6 + audio.bass * 0.4)
+        # clapper weight (small ring)
+        weight = circle_ring(0.12, y=3.5, segments=16, color=(0.95, 0.75, 0.2), z=z - 2)
+        wdata = weight.reshape(-1, 6)
+        wdata[:, 0] += clap_swing
+        pipe.draw_lines(self._temp_lines(wdata.reshape(-1)), mvp, pulse=0.8)
 
         alive = []
         for sw in self.shockwaves:
@@ -589,13 +619,17 @@ class SceneManager:
         pipe.begin_scene((0.02, 0.01, 0.03, 1))
         pipe.draw_background(top=top, mid=mid, bot=bot, star_amount=0.4 * (1 - fade), time=t)
 
-        z = -8 - local * 0.35
-        view = look_at((math.sin(local * 0.05) * 1.5, 2.8, z + 12), (0.0, 1.2, z - 5))
+        z = -6 - local * 0.3
+        view = look_at(
+            (math.sin(local * 0.08) * 2.2, 3.2, z + 9.5),
+            (0.0, 1.5, z - 3),
+        )
         alpha_pulse = max(0.0, 1.0 - fade)
         pipe.draw_lines(self.ridge, self._mvp(view), pulse=0.35 * alpha_pulse)
-        pipe.draw_lines(self.stupas, self._mvp(view), pulse=0.5 * alpha_pulse)
-        fm = translate(0, math.sin(t * 1.5) * 0.05, 0)
-        pipe.draw_lines(self.flags, self._mvp(view, fm), pulse=0.4 * alpha_pulse)
+        pipe.draw_lines(self.stupas, self._mvp(view), pulse=0.55 * alpha_pulse)
+        # gentle wind sway on flag strings
+        fm = mul(translate(0, math.sin(t * 1.5) * 0.04, 0), rotate_y(math.sin(t * 0.7) * 0.02))
+        pipe.draw_lines(self.flags, self._mvp(view, fm), pulse=0.55 * alpha_pulse)
 
         remain = SONG_DURATION - t
         if remain < 12:
