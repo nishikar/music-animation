@@ -4,61 +4,146 @@ Wish You Were Here (Nepali Adhunik) — Himalayan Landscape Visualizer
 Production-oriented procedural GLSL scenes, 72 BPM / 189s.
 
 Controls: ESC quit | SPACE pause | R reset | 1-8 jump scene
-          S screenshot | LEFT/RIGHT scrub 5s
+          S screenshot | LEFT/RIGHT scrub 5s | M mute
 CLI:      --screenshot-all DIR | --screenshot TIME PATH
+          --export out.mp4 [--fps 30] [--audio PATH]  (no interactive preview)
 """
+from __future__ import annotations
+
 import argparse
 import os
+import shutil
 import struct
+import subprocess
 import sys
+from pathlib import Path
 
-# Platform display drivers:
-# - macOS must use Cocoa (never force x11 — that yields "video system not initialized")
-# - Linux cloud/headless VMs often need x11 + software GL
-if sys.platform == "darwin":
-    os.environ.pop("SDL_VIDEODRIVER", None)  # let SDL pick cocoa
-    os.environ.pop("LIBGL_ALWAYS_SOFTWARE", None)
-elif sys.platform.startswith("linux"):
-    os.environ.setdefault("SDL_VIDEODRIVER", "x11")
-    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
-        os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_AUDIO = SCRIPT_DIR / "wish_here_nepali.mp3"
 
-import pygame
-import moderngl
-
-# ==============================================================================
-# 1. PYGAME & OPENGL 3.3 CORE PROFILE
-# ==============================================================================
-pygame.init()
-try:
-    pygame.mixer.quit()
-except pygame.error:
-    pass
-
-# macOS Core Profile attributes — must run after init, before set_mode
-pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3)
-pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 3)
-pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
-pygame.display.gl_set_attribute(pygame.GL_CONTEXT_FLAGS, pygame.GL_CONTEXT_FORWARD_COMPATIBLE_FLAG)
-
+BPM = 72.0
+TOTAL_DURATION = 189.0
 WINDOW_SIZE = (1280, 720)
-screen = pygame.display.set_mode(WINDOW_SIZE, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
-pygame.display.set_caption("Wish You Were Here (Nepali Adhunik) - 72 BPM")
 
-# Bind ModernGL to the pygame-created GL context (important on macOS)
-ctx = moderngl.create_context(require=330)
-width, height = screen.get_size()
-ctx.viewport = (0, 0, width, height)
+# Filled by init_graphics()
+ctx = None
+screen = None
+program = None
+vao = None
+width, height = WINDOW_SIZE
+clock = None
 
-vertices = [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0]
-vertex_data = struct.pack(f"{len(vertices)}f", *vertices)
+
+def _configure_display_env(hidden: bool = False) -> None:
+    """Platform display drivers — never force x11 on macOS."""
+    if sys.platform == "darwin":
+        os.environ.pop("SDL_VIDEODRIVER", None)
+        os.environ.pop("LIBGL_ALWAYS_SOFTWARE", None)
+    elif sys.platform.startswith("linux"):
+        os.environ.setdefault("SDL_VIDEODRIVER", "x11")
+        if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+            os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
+    if hidden:
+        os.environ.setdefault("SDL_VIDEO_WINDOW_POS", "10000,10000")
+
+
+def init_graphics(hidden: bool = False, size: tuple[int, int] = WINDOW_SIZE) -> None:
+    """Create pygame + ModernGL context. Call after argparse."""
+    global ctx, screen, program, vao, width, height, clock
+
+    _configure_display_env(hidden=hidden)
+
+    import pygame
+    import moderngl
+
+    pygame.init()
+
+    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3)
+    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 3)
+    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
+    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_FLAGS, pygame.GL_CONTEXT_FORWARD_COMPATIBLE_FLAG)
+
+    flags = pygame.OPENGL | pygame.DOUBLEBUF
+    if hidden and hasattr(pygame, "HIDDEN"):
+        flags |= pygame.HIDDEN
+    elif not hidden:
+        flags |= pygame.RESIZABLE
+
+    screen = pygame.display.set_mode(size, flags)
+    pygame.display.set_caption("Wish You Were Here (Nepali Adhunik) - 72 BPM")
+
+    ctx = moderngl.create_context(require=330)
+    width, height = screen.get_size()
+    ctx.viewport = (0, 0, width, height)
+
+    vertices = [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0]
+    vertex_data = struct.pack(f"{len(vertices)}f", *vertices)
+
+    program = ctx.program(vertex_shader=vertex_shader, fragment_shader=fragment_shader)
+    vbo = ctx.buffer(vertex_data)
+    vao = ctx.vertex_array(program, [(vbo, "2f", "in_vert")])
+    clock = pygame.time.Clock()
+
+    if "u_bpm" in program:
+        program["u_bpm"].value = float(BPM)
+    if "u_duration" in program:
+        program["u_duration"].value = float(TOTAL_DURATION)
+
+
+def resolve_audio_path(explicit: str | None = None) -> Path | None:
+    if explicit:
+        p = Path(explicit).expanduser().resolve()
+        if not p.is_file():
+            print(f"Warning: audio not found: {p}")
+            return None
+        return p
+    if DEFAULT_AUDIO.is_file():
+        return DEFAULT_AUDIO
+    return None
+
+
+def init_audio(audio_path: Path | None, muted: bool = False) -> bool:
+    """Load wish_here_nepali.mp3 (or override). Returns True if ready to play."""
+    import pygame
+
+    if audio_path is None:
+        print(f"Audio not found (expected {DEFAULT_AUDIO.name} beside the script). Continuing silent.")
+        return False
+    try:
+        if not pygame.mixer.get_init():
+            pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
+        pygame.mixer.music.load(str(audio_path))
+        pygame.mixer.music.set_volume(0.0 if muted else 1.0)
+        print(f"Audio: {audio_path}")
+        return True
+    except pygame.error as exc:
+        print(f"Audio load failed ({exc}). Continuing silent.")
+        return False
+
+
+def seek_audio(t: float, has_audio: bool, paused: bool) -> None:
+    import pygame
+
+    if not has_audio:
+        return
+    try:
+        pygame.mixer.music.play(start=max(0.0, float(t)))
+        if paused:
+            pygame.mixer.music.pause()
+    except pygame.error:
+        try:
+            pygame.mixer.music.play()
+            if paused:
+                pygame.mixer.music.pause()
+        except pygame.error:
+            pass
+
 
 vertex_shader = """
 #version 330
 in vec2 in_vert;
 void main() { gl_Position = vec4(in_vert, 0.0, 1.0); }
 """
-
 fragment_shader = """
 #version 330
 out vec4 fragColor;
@@ -1009,19 +1094,6 @@ void main() {
 }
 """
 
-program = ctx.program(vertex_shader=vertex_shader, fragment_shader=fragment_shader)
-vbo = ctx.buffer(vertex_data)
-vao = ctx.vertex_array(program, [(vbo, "2f", "in_vert")])
-clock = pygame.time.Clock()
-
-BPM = 72.0
-TOTAL_DURATION = 189.0
-
-if "u_bpm" in program:
-    program["u_bpm"].value = float(BPM)
-if "u_duration" in program:
-    program["u_duration"].value = float(TOTAL_DURATION)
-
 
 def scene_name_at(t: float) -> str:
     if t < 24.0:
@@ -1048,10 +1120,13 @@ def render_frame(elapsed: float, w: int, h: int) -> None:
     if "u_time" in program:
         program["u_time"].value = float(elapsed)
     vao.render()
+    import pygame
     pygame.display.flip()
 
 
 def save_screenshot(path: str) -> None:
+    import pygame
+
     data = ctx.screen.read(components=3)
     surf = pygame.image.fromstring(data, (width, height), "RGB")
     surf = pygame.transform.flip(surf, False, True)
@@ -1066,22 +1141,115 @@ def run_screenshot_mode(jobs: list[tuple[float, str]]) -> None:
     for t, path in jobs:
         for _ in range(2):
             render_frame(t, width, height)
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         save_screenshot(path)
         print(f"  t={t:.1f}s -> {scene_name_at(t)}")
 
 
-def run_interactive() -> None:
+def run_export_mp4(
+    output: Path,
+    fps: float,
+    audio_path: Path | None,
+    duration: float,
+) -> None:
+    """Render all frames to ffmpeg (hidden window, no interactive preview)."""
+    import pygame
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        print("error: ffmpeg not found on PATH. Install ffmpeg to export MP4.", file=sys.stderr)
+        sys.exit(1)
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    w, h = width, height
+    # OpenGL read is bottom-up; vflip corrects orientation for ffmpeg
+    cmd = [
+        ffmpeg, "-y", "-loglevel", "error", "-stats",
+        "-f", "rawvideo", "-pix_fmt", "rgb24",
+        "-s", f"{w}x{h}", "-r", str(fps),
+        "-i", "pipe:0",
+    ]
+    if audio_path is not None:
+        cmd += ["-i", str(audio_path)]
+
+    cmd += [
+        "-vf", "vflip",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-preset", "medium", "-crf", "18",
+        "-movflags", "+faststart",
+    ]
+    if audio_path is not None:
+        cmd += ["-c:a", "aac", "-b:a", "192k", "-shortest"]
+    else:
+        cmd += ["-an", "-t", str(duration)]
+
+    cmd.append(str(output))
+
+    total_frames = int(round(duration * fps))
+    print("=== Export MP4 (no preview) ===")
+    print(f"Output: {output}")
+    print(f"Size: {w}x{h} @ {fps:g} fps, {total_frames} frames, {duration:.1f}s")
+    print(f"Audio: {audio_path if audio_path else '(none)'}")
+    print("Encoding…")
+
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    assert proc.stdin is not None
+    try:
+        for i in range(total_frames):
+            t = i / fps
+            render_frame(t, w, h)
+            # Pump events so the OS does not mark the app as hung
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    raise KeyboardInterrupt
+            frame = ctx.screen.read(components=3)
+            proc.stdin.write(frame)
+            if i % max(1, int(fps)) == 0 or i == total_frames - 1:
+                pct = 100.0 * (i + 1) / total_frames
+                print(f"\r  frame {i + 1}/{total_frames} ({pct:5.1f}%)", end="", flush=True)
+        print()
+    except KeyboardInterrupt:
+        print("\nExport cancelled.")
+        proc.stdin.close()
+        proc.kill()
+        sys.exit(1)
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+
+    rc = proc.wait()
+    if rc != 0:
+        print(f"error: ffmpeg exited with code {rc}", file=sys.stderr)
+        sys.exit(rc)
+    print(f"Done: {output}")
+
+
+def run_interactive(audio_path: Path | None) -> None:
     global width, height
+    import pygame
+
+    has_audio = init_audio(audio_path, muted=False)
+    muted = False
+
     start_ticks = pygame.time.get_ticks()
     paused = False
     pause_start = 0.0
     elapsed_time = 0.0
     running = True
 
+    if has_audio:
+        seek_audio(0.0, True, False)
+
     print("=== Himalayan Landscape Visualizer: Wish You Were Here (72 BPM) ===")
     print(f"Duration: {int(TOTAL_DURATION // 60)}m {int(TOTAL_DURATION % 60):02d}s")
-    print("Controls: ESC | SPACE | R | 1-8 scenes | S shot | LEFT/RIGHT scrub\n")
+    print("Controls: ESC | SPACE | R | 1-8 scenes | S shot | LEFT/RIGHT scrub | M mute")
+    print(f"Export:   python3 {Path(__file__).name} --export out.mp4\n")
 
     while running:
         if not paused:
@@ -1089,6 +1257,7 @@ def run_interactive() -> None:
         if elapsed_time > TOTAL_DURATION:
             start_ticks = pygame.time.get_ticks()
             elapsed_time = 0.0
+            seek_audio(0.0, has_audio, paused)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -1099,24 +1268,36 @@ def run_interactive() -> None:
                 elif event.key == pygame.K_r:
                     start_ticks = pygame.time.get_ticks()
                     elapsed_time = 0.0
+                    seek_audio(0.0, has_audio, paused)
                 elif event.key == pygame.K_SPACE:
                     paused = not paused
                     if paused:
                         pause_start = pygame.time.get_ticks()
+                        if has_audio:
+                            pygame.mixer.music.pause()
                     else:
                         start_ticks += pygame.time.get_ticks() - pause_start
+                        if has_audio:
+                            pygame.mixer.music.unpause()
+                elif event.key == pygame.K_m:
+                    if has_audio:
+                        muted = not muted
+                        pygame.mixer.music.set_volume(0.0 if muted else 1.0)
                 elif event.key == pygame.K_s:
                     save_screenshot(f"frame_{int(elapsed_time):03d}.png")
                 elif pygame.K_1 <= event.key <= pygame.K_8:
                     targets = [10.0, 36.0, 60.0, 84.0, 108.0, 132.0, 156.0, 178.0]
                     elapsed_time = targets[event.key - pygame.K_1]
                     start_ticks = pygame.time.get_ticks() - int(elapsed_time * 1000)
+                    seek_audio(elapsed_time, has_audio, paused)
                 elif event.key == pygame.K_LEFT:
                     elapsed_time = max(0.0, elapsed_time - 5.0)
                     start_ticks = pygame.time.get_ticks() - int(elapsed_time * 1000)
+                    seek_audio(elapsed_time, has_audio, paused)
                 elif event.key == pygame.K_RIGHT:
                     elapsed_time = min(TOTAL_DURATION, elapsed_time + 5.0)
                     start_ticks = pygame.time.get_ticks() - int(elapsed_time * 1000)
+                    seek_audio(elapsed_time, has_audio, paused)
             elif event.type == pygame.VIDEORESIZE:
                 width, height = screen.get_size()
                 ctx.viewport = (0, 0, width, height)
@@ -1124,8 +1305,9 @@ def run_interactive() -> None:
         render_frame(elapsed_time, width, height)
         mins, secs = int(elapsed_time // 60), int(elapsed_time % 60)
         status = " [PAUSED]" if paused else ""
+        mute_flag = " [MUTE]" if muted else ""
         pygame.display.set_caption(
-            f"[{mins:02d}:{secs:02d} / 03:09] {scene_name_at(elapsed_time)}{status} | 72 BPM"
+            f"[{mins:02d}:{secs:02d} / 03:09] {scene_name_at(elapsed_time)}{status}{mute_flag} | 72 BPM"
         )
         clock.tick(60)
 
@@ -1134,10 +1316,38 @@ def run_interactive() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Himalayan landscape visualizer")
+    parser = argparse.ArgumentParser(
+        description="Himalayan landscape visualizer — Wish You Were Here (Nepali)"
+    )
     parser.add_argument("--screenshot", nargs=2, metavar=("TIME", "PATH"), action="append")
     parser.add_argument("--screenshot-all", metavar="DIR")
+    parser.add_argument(
+        "--export",
+        metavar="OUT.mp4",
+        help="Render full piece to MP4 via ffmpeg (hidden window, no preview)",
+    )
+    parser.add_argument("--fps", type=float, default=30.0, help="Export frame rate (default 30)")
+    parser.add_argument(
+        "--audio",
+        metavar="PATH",
+        help=f"Audio file (default: {DEFAULT_AUDIO.name} beside this script)",
+    )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=TOTAL_DURATION,
+        help=f"Export duration in seconds (default {TOTAL_DURATION})",
+    )
+    parser.add_argument("--width", type=int, default=WINDOW_SIZE[0])
+    parser.add_argument("--height", type=int, default=WINDOW_SIZE[1])
     args = parser.parse_args()
+
+    audio_path = resolve_audio_path(args.audio)
+    exporting = args.export is not None
+    stills = bool(args.screenshot or args.screenshot_all)
+    hidden = exporting or stills
+
+    init_graphics(hidden=hidden, size=(args.width, args.height))
 
     jobs: list[tuple[float, str]] = []
     if args.screenshot:
@@ -1150,9 +1360,22 @@ def main() -> None:
 
     if jobs:
         run_screenshot_mode(jobs)
+        import pygame
         pygame.quit()
         sys.exit(0)
-    run_interactive()
+
+    if exporting:
+        run_export_mp4(
+            output=Path(args.export),
+            fps=max(1.0, float(args.fps)),
+            audio_path=audio_path,
+            duration=max(0.1, float(args.duration)),
+        )
+        import pygame
+        pygame.quit()
+        sys.exit(0)
+
+    run_interactive(audio_path)
 
 
 if __name__ == "__main__":
