@@ -12,8 +12,16 @@ import os
 import struct
 import sys
 
-os.environ.setdefault("SDL_VIDEODRIVER", "x11")
-os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
+# Platform display drivers:
+# - macOS must use Cocoa (never force x11 — that yields "video system not initialized")
+# - Linux cloud/headless VMs often need x11 + software GL
+if sys.platform == "darwin":
+    os.environ.pop("SDL_VIDEODRIVER", None)  # let SDL pick cocoa
+    os.environ.pop("LIBGL_ALWAYS_SOFTWARE", None)
+elif sys.platform.startswith("linux"):
+    os.environ.setdefault("SDL_VIDEODRIVER", "x11")
+    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
 
 import pygame
 import moderngl
@@ -22,8 +30,12 @@ import moderngl
 # 1. PYGAME & OPENGL 3.3 CORE PROFILE
 # ==============================================================================
 pygame.init()
-pygame.mixer.quit()
+try:
+    pygame.mixer.quit()
+except pygame.error:
+    pass
 
+# macOS Core Profile attributes — must run after init, before set_mode
 pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3)
 pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 3)
 pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
@@ -33,7 +45,8 @@ WINDOW_SIZE = (1280, 720)
 screen = pygame.display.set_mode(WINDOW_SIZE, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
 pygame.display.set_caption("Wish You Were Here (Nepali Adhunik) - 72 BPM")
 
-ctx = moderngl.create_context()
+# Bind ModernGL to the pygame-created GL context (important on macOS)
+ctx = moderngl.create_context(require=330)
 width, height = screen.get_size()
 ctx.viewport = (0, 0, width, height)
 
